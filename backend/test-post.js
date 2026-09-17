@@ -1,0 +1,1 @@
+fetch('http://localhost:3000/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device: 'ESP8266_01', status: 'ON' }) }) .then(r => r.json()) .then(data => console.log(data));
