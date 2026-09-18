@@ -53,8 +53,18 @@ app.post('/api/data', async (req, res) => {
     }
 
     const insertResult = await pool.query(
-      `INSERT INTO iot2 (device, status, status2, status3, status4, status5, suhu, suhu2, suhu3)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO iot2 (device, status, status2, status3, status4, status5, suhu, suhu2, suhu3, time)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+       ON CONFLICT (device) DO UPDATE SET
+         status  = EXCLUDED.status,
+         status2 = EXCLUDED.status2,
+         status3 = EXCLUDED.status3,
+         status4 = EXCLUDED.status4,
+         status5 = EXCLUDED.status5,
+         suhu    = EXCLUDED.suhu,
+         suhu2   = EXCLUDED.suhu2,
+         suhu3   = EXCLUDED.suhu3,
+         time    = EXCLUDED.time
        RETURNING *`,
       [
         device,
