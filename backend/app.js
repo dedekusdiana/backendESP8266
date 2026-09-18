@@ -92,4 +92,24 @@ app.get('/api/status', async (req, res) => {
   }
 });
 
+// GET /api/status/:device -> status terkini untuk SATU device (dipakai ESP8266 buat polling LED)
+app.get('/api/status/:device', async (req, res) => {
+  try {
+    const { device } = req.params;
+    const { rows } = await pool.query(
+      `SELECT device, status, time FROM iot2 WHERE device = $1 ORDER BY time DESC LIMIT 1`,
+      [device]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: `Belum ada data untuk device "${device}"` });
+    }
+
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error in GET /api/status/:device:', err);
+    res.status(500).json({ error: 'Gagal mengambil status device' });
+  }
+});
+
 module.exports = app;
