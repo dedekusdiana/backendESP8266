@@ -1,11 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginHorizontal="16dp"
-    android:layout_marginVertical="5dp"
     app:cardCornerRadius="14dp"
     app:cardElevation="0dp"
     app:strokeWidth="1dp"
@@ -15,51 +12,47 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:padding="14dp">
-
-        <ImageView
-            android:id="@+id/relayDot"
-            android:layout_width="10dp"
-            android:layout_height="10dp"
-            android:layout_marginEnd="12dp"
-            android:src="@drawable/ic_status_dot" />
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="12dp">
 
         <LinearLayout
-            android:layout_width="0dp"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
             <TextView
-                android:id="@+id/tvRelayLabel"
+                android:id="@+id/tvSuhuTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="15sp"
-                android:textStyle="bold"
-                android:textColor="@color/darkNavy"
-                tools:text="Relay 1" />
+                android:text="Suhu"
+                android:textSize="11sp"
+                android:textColor="@color/mutedText"
+                android:maxLines="1" />
 
             <ImageButton
-                android:id="@+id/btnEditRelayLabel"
-                android:layout_width="28dp"
-                android:layout_height="28dp"
-                android:layout_marginStart="4dp"
+                android:id="@+id/btnEditSuhuTitle"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_marginStart="2dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="Edit nama relay"
-                android:padding="5dp"
+                android:contentDescription="Edit nama sensor"
+                android:padding="3dp"
                 android:src="@android:drawable/ic_menu_edit"
                 app:tint="@color/mutedText" />
 
         </LinearLayout>
 
-        <com.google.android.material.switchmaterial.SwitchMaterial
-            android:id="@+id/switchRelay"
+        <TextView
+            android:id="@+id/tvSuhuValue"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            app:thumbTint="@color/cardBackground" />
+            android:layout_marginTop="4dp"
+            android:text="--°C"
+            android:textSize="19sp"
+            android:textStyle="bold"
+            android:textColor="@color/accentOrange" />
 
     </LinearLayout>
 

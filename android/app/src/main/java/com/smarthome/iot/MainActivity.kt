@@ -1,10 +1,13 @@
 package com.smarthome.iot
 
+import android.app.AlertDialog
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.InputType
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -16,6 +19,7 @@ import kotlinx.coroutines.launch
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
+    private lateinit var labelPrefs: LabelPrefs
     private val mainScope = CoroutineScope(Dispatchers.Main)
     private val handler = Handler(Looper.getMainLooper())
 
@@ -24,8 +28,8 @@ class MainActivity : AppCompatActivity() {
     private var deviceNames: List<String> = emptyList()
     private var selectedDevice: String? = null
     private var isUpdating = false
+    private var lastKnownStatus: DeviceStatusItem? = null
 
-    // Auto-refresh tiap 5 detik, supaya tampilan tetap sinkron.
     private val pollIntervalMs = 5_000L
     private val pollRunnable = object : Runnable {
         override fun run() {
@@ -39,11 +43,22 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        relayAdapter = RelayAdapter { jsonKey, newStatus ->
-            updateRelay(jsonKey, newStatus)
-        }
+        labelPrefs = LabelPrefs(this)
+
+        relayAdapter = RelayAdapter(
+            labelPrefs = labelPrefs,
+            onToggle = { jsonKey, newStatus -> updateField(jsonKey, newStatus) },
+            onEditLabel = { jsonKey, currentLabel -> showRenameDialog(currentLabel) { newLabel ->
+                selectedDevice?.let { labelPrefs.setLabel(it, jsonKey, newLabel) }
+                relayAdapter.refreshLabels()
+            } }
+        )
         binding.relayRecyclerView.layoutManager = LinearLayoutManager(this)
         binding.relayRecyclerView.adapter = relayAdapter
+
+        setupSuhuCard(binding.cardSuhu1.tvSuhuTitle, binding.cardSuhu1.btnEditSuhuTitle, SUHU_FIELDS[0].jsonKey)
+        setupSuhuCard(binding.cardSuhu2.tvSuhuTitle, binding.cardSuhu2.btnEditSuhuTitle, SUHU_FIELDS[1].jsonKey)
+        setupSuhuCard(binding.cardSuhu3.tvSuhuTitle, binding.cardSuhu3.btnEditSuhuTitle, SUHU_FIELDS[2].jsonKey)
 
         binding.swipeRefresh.setOnRefreshListener {
             loadDeviceListThenStatus()
@@ -54,6 +69,7 @@ class MainActivity : AppCompatActivity() {
                 val device = deviceNames.getOrNull(position) ?: return
                 if (device != selectedDevice) {
                     selectedDevice = device
+                    refreshSuhuTitles()
                     loadStatus(showSpinner = true)
                 }
             }
@@ -74,7 +90,44 @@ class MainActivity : AppCompatActivity() {
         handler.removeCallbacks(pollRunnable)
     }
 
-    /** Ambil daftar device dari GET /api/status buat isi combo box. */
+    private fun setupSuhuCard(
+        titleView: android.widget.TextView,
+        editButton: android.widget.ImageButton,
+        jsonKey: String
+    ) {
+        editButton.setOnClickListener {
+            showRenameDialog(titleView.text.toString()) { newLabel ->
+                selectedDevice?.let { labelPrefs.setLabel(it, jsonKey, newLabel) }
+                titleView.text = newLabel
+            }
+        }
+    }
+
+    private fun refreshSuhuTitles() {
+        val device = selectedDevice ?: return
+        binding.cardSuhu1.tvSuhuTitle.text = labelPrefs.getLabel(device, SUHU_FIELDS[0].jsonKey, SUHU_FIELDS[0].label)
+        binding.cardSuhu2.tvSuhuTitle.text = labelPrefs.getLabel(device, SUHU_FIELDS[1].jsonKey, SUHU_FIELDS[1].label)
+        binding.cardSuhu3.tvSuhuTitle.text = labelPrefs.getLabel(device, SUHU_FIELDS[2].jsonKey, SUHU_FIELDS[2].label)
+    }
+
+    private fun showRenameDialog(currentLabel: String, onSave: (String) -> Unit) {
+        val input = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT
+            setText(currentLabel)
+            setSelection(currentLabel.length)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Ubah nama")
+            .setView(input)
+            .setPositiveButton("Simpan") { _, _ ->
+                val newLabel = input.text.toString().trim()
+                if (newLabel.isNotEmpty()) onSave(newLabel)
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
     private fun loadDeviceListThenStatus() {
         binding.progressBar.visibility = android.view.View.VISIBLE
         mainScope.launch {
@@ -104,6 +157,7 @@ class MainActivity : AppCompatActivity() {
                     val keepIndex = deviceNames.indexOf(selectedDevice).let { if (it >= 0) it else 0 }
                     selectedDevice = deviceNames[keepIndex]
                     binding.deviceSpinner.setSelection(keepIndex)
+                    refreshSuhuTitles()
 
                     loadStatus(showSpinner = false)
                 } else {
@@ -120,7 +174,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Ambil status terbaru (5 relay + 3 suhu) untuk device yang sedang dipilih. */
     private fun loadStatus(showSpinner: Boolean) {
         val device = selectedDevice ?: return
         if (isUpdating) return
@@ -142,15 +195,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Update 1 relay saja -- field lain otomatis dipertahankan oleh backend. */
-    private fun updateRelay(jsonKey: String, newStatus: String) {
+    private fun updateField(jsonKey: String, newValue: String) {
         val device = selectedDevice ?: return
         isUpdating = true
         binding.progressBar.visibility = android.view.View.VISIBLE
 
         mainScope.launch {
             try {
-                val body = mapOf("device" to device, jsonKey to newStatus)
+                val body = mapOf("device" to device, jsonKey to newValue)
                 val response = RetrofitClient.apiService.updateStatus(body)
                 if (response.isSuccessful) {
                     response.body()?.data?.let { bindStatus(it) }
@@ -167,10 +219,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun bindStatus(item: DeviceStatusItem) {
-        binding.tvLastUpdate.text = "Update terakhir: ${item.time}"
-        binding.tvSuhu1.text = "${item.suhu}\u00B0C"
-        binding.tvSuhu2.text = "${item.suhu2}\u00B0C"
-        binding.tvSuhu3.text = "${item.suhu3}\u00B0C"
-        relayAdapter.submitStatus(item)
+        lastKnownStatus = item
+        val device = selectedDevice ?: item.device
+
+        binding.tvLastUpdate.text = "Update terakhir: ${TimeUtils.toJakartaTime(item.time)}"
+
+        binding.cardSuhu1.tvSuhuValue.text = "${item.valueForSuhu("suhu")}\u00B0C"
+        binding.cardSuhu2.tvSuhuValue.text = "${item.valueForSuhu("suhu2")}\u00B0C"
+        binding.cardSuhu3.tvSuhuValue.text = "${item.valueForSuhu("suhu3")}\u00B0C"
+
+        relayAdapter.submitStatus(device, item)
     }
 }

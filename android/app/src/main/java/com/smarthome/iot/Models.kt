@@ -36,6 +36,21 @@ val RELAY_FIELDS = listOf(
     RelayField("Relay 5", "status5"),
 )
 
+data class SuhuField(val label: String, val jsonKey: String)
+
+val SUHU_FIELDS = listOf(
+    SuhuField("Suhu 1", "suhu"),
+    SuhuField("Suhu 2", "suhu2"),
+    SuhuField("Suhu 3", "suhu3"),
+)
+
+fun DeviceStatusItem.valueForSuhu(jsonKey: String): String = when (jsonKey) {
+    "suhu" -> suhu
+    "suhu2" -> suhu2
+    "suhu3" -> suhu3
+    else -> "0"
+}
+
 fun DeviceStatusItem.valueFor(jsonKey: String): String = when (jsonKey) {
     "status" -> status
     "status2" -> status2
