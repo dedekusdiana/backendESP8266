@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
+const mqtt = require('mqtt');
 
 const app = express();
 app.use(cors());
@@ -15,6 +16,44 @@ const pool = new Pool({
 const STATUS_FIELDS = ['status', 'status2', 'status3', 'status4', 'status5'];
 const SUHU_FIELDS = ['suhu', 'suhu2', 'suhu3'];
 const ALL_FIELDS = [...STATUS_FIELDS, ...SUHU_FIELDS];
+
+// ---------------------------------------------------------------
+// Publish ke HiveMQ setiap ada update, supaya ESP8266 yang subscribe
+// dapat notifikasi instan (bukan polling). Best-effort: kalau broker
+// lagi bermasalah, ini tidak menggagalkan response API ke Android.
+// ---------------------------------------------------------------
+async function publishUpdate(device, payload) {
+  if (!process.env.MQTT_HOST) return; // belum dikonfigurasi, skip diam-diam
+
+  const url = `mqtts://${process.env.MQTT_HOST}:${process.env.MQTT_PORT || 8883}`;
+
+  return new Promise((resolve) => {
+    const client = mqtt.connect(url, {
+      username: process.env.MQTT_USERNAME,
+      password: process.env.MQTT_PASSWORD,
+      connectTimeout: 5000,
+      reconnectPeriod: 0, // jangan auto-reconnect, ini cuma sekali pakai
+    });
+
+    const finish = () => {
+      client.end(true);
+      resolve();
+    };
+
+    client.on('connect', () => {
+      const topic = `smarthome/${device}/status`;
+      client.publish(topic, JSON.stringify(payload), { qos: 1 }, () => finish());
+    });
+
+    client.on('error', (err) => {
+      console.error('MQTT publish error:', err.message);
+      finish();
+    });
+
+    // Jaga-jaga kalau connect tidak pernah selesai
+    setTimeout(finish, 6000);
+  });
+}
 
 // Health check
 app.get('/', (req, res) => {
@@ -73,7 +112,12 @@ app.post('/api/data', async (req, res) => {
       ]
     );
 
-    res.status(201).json({ success: true, data: insertResult.rows[0] });
+    const savedRow = insertResult.rows[0];
+
+    // Publish ke HiveMQ (best-effort, tidak memblokir response kalau gagal)
+    await publishUpdate(device, savedRow);
+
+    res.status(201).json({ success: true, data: savedRow });
   } catch (err) {
     console.error('Error in POST /api/data:', err);
     res.status(500).json({ error: 'Gagal menyimpan data' });
