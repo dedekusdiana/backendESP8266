@@ -26,7 +26,8 @@ Tabel `iot2`:
 esp8266-iot2/
 ├── sql/                 -> script bikin tabel iot2 di Neon
 ├── backend/             -> REST API (Node.js + Express), deploy ke Vercel
-└── esp8266-firmware/    -> kode Arduino (.ino) untuk ESP8266
+├── esp8266-firmware/    -> kode Arduino (.ino) untuk ESP8266
+└── android/             -> app Android "Smart Home IoT" (kontrol ON/OFF)
 ```
 
 ---
@@ -89,6 +90,21 @@ Kalau sudah oke, deploy ke Vercel (Add New Project → pilih repo ini → Root D
 ## 4. Cek data masuk
 
 Buka `https://<url-vercel-kamu>/api/data` di browser — harus muncul data yang dikirim ESP8266.
+
+## 5. App Android "Smart Home IoT"
+
+App Android di folder `android/` punya:
+- Header "Smart Home IoT"
+- Combo box pilih device
+- Label besar status lampu (ON/OFF), auto-refresh tiap 5 detik
+- Tombol NYALAKAN / MATIKAN — mengirim `POST /api/data` ke backend, yang otomatis
+  dibaca ESP8266 lewat polling `GET /api/status/:device`
+
+Sebelum build, buka `android/app/src/main/java/com/smarthome/iot/RetrofitClient.kt`,
+pastikan `BASE_URL` sudah sesuai URL Vercel backend kamu.
+
+Bisa dibuild via Android Studio (buka folder `android/`, klik Run), atau otomatis lewat
+GitHub Actions (tab Actions → "Build APK" → Run workflow → download APK dari Artifacts).
 
 ---
 

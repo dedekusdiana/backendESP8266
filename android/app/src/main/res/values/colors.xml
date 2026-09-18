@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primaryBlue">#1976D2</color>
+    <color name="darkNavy">#212121</color>
+    <color name="onColor">#2E7D32</color>
+    <color name="offColor">#D32F2F</color>
+    <color name="screenBackground">#F0F2F5</color>
+    <color name="mutedText">#757575</color>
+</resources>

@@ -1,19 +1,20 @@
 /*
-  ESP-01 (ESP8266) -> HTTPS -> Vercel API -> Neon PostgreSQL (tabel iot2)
+  ESP-01 (ESP8266) -- baca status dari Neon (lewat Vercel API) -- nyalakan LED
 
-  Alur:
-  1. ESP8266 konek ke WiFi
-  2. Baca tombol di GPIO2 (D2), pakai INPUT_PULLUP (default HIGH, LOW saat ditekan)
-  3. LED bawaan ESP-01 (GPIO0, aktif LOW) menyala mengikuti status tombol
-  4. Setiap ada PERUBAHAN status tombol, kirim POST ke Vercel:
-     https://<url-vercel-kamu>/api/data
-     Body JSON: {"device":"ESP01_01","status":"ON"}
-  5. Backend simpan ke tabel iot2, kolom "time" diisi otomatis oleh server
+  Alur (KEBALIKAN dari versi sebelumnya):
+  1. ESP8266 konek ke WiFi (perlu akses internet, karena akses server di Vercel)
+  2. Setiap POLL_INTERVAL_MS, ESP8266 GET ke:
+     https://<url-vercel-kamu>/api/status/ESP01_01
+  3. Kalau field "status" di response == "ON" -> LED menyala
+     Kalau "OFF" (atau device belum ada datanya) -> LED mati
+  4. ESP8266 TIDAK mengirim data apa pun -- murni jadi "penerima perintah"
+
+  Catatan: polling tiap 3 detik cukup ringan untuk ESP8266. Kalau mau lebih
+  responsif bisa diturunkan, tapi makin sering makin berat ke memori ESP8266.
 
   Library yang dibutuhkan (install lewat Library Manager di Arduino IDE):
   - ArduinoJson (by Benoit Blanchon)
-  - ESP8266WiFi, ESP8266HTTPClient, WiFiClientSecure
-    (sudah bawaan kalau board package "ESP8266" sudah di-install di Boards Manager)
+  - ESP8266WiFi, ESP8266HTTPClient, WiFiClientSecure (bawaan board package ESP8266)
 */
 
 #include <ESP8266WiFi.h>
@@ -22,21 +23,20 @@
 #include <ArduinoJson.h>
 
 // ------------------- GANTI SESUAI KEBUTUHANMU -------------------
-const char* WIFI_SSID     = "ESP-01_AP";
-const char* WIFI_PASSWORD = "123456789";
+const char* WIFI_SSID     = "IOT";
+const char* WIFI_PASSWORD = "rayyanazka";
 
-// URL backend di Vercel (setelah nanti kamu deploy), diakhiri /api/data
-const char* API_URL = "https://esp8266-iot2-backend.vercel.app/api/data";
+// URL backend Vercel + /api/status/<nama-device>
+const char* STATUS_URL = "https://backend-esp-8266.vercel.app/api/status/ESP01_01";
 
-// Nama device ini (bebas, asal unik per alat)
-const char* DEVICE_NAME = "ESP01_01";
+// Interval polling (ms). 3000 = tiap 3 detik.
+const unsigned long POLL_INTERVAL_MS = 3000;
 // ------------------------------------------------------------------
 
-// ---- Pin sesuai hardware ESP-01 kamu ----
-const int buttonPin = 2;   // Tombol di pin D2 (GPIO2)
-const int led = 0;         // LED bawaan ESP-01 (GPIO0, aktif LOW)
+const int led = 0;  // LED bawaan ESP-01 (GPIO0, aktif LOW)
 
-int lastState = HIGH;      // default HIGH karena INPUT_PULLUP
+unsigned long lastPollTime = 0;
+bool lastLedOn = false;
 
 void connectWiFi() {
   Serial.print("Menghubungkan ke WiFi: ");
@@ -58,50 +58,70 @@ void connectWiFi() {
   Serial.println(WiFi.localIP());
 }
 
-// ---- Kirim status tombol ke backend Vercel lewat HTTPS POST ----
-void publishStatus(const String& buttonState) {
+// Ambil status terbaru dari server, lalu set LED sesuai isinya
+void pollStatusAndSetLed() {
+  Serial.print("Free heap: ");
+  Serial.println(ESP.getFreeHeap());
+
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi tidak terhubung, skip pengiriman.");
+    Serial.println("WiFi tidak terhubung, coba sambung ulang...");
     connectWiFi();
     return;
   }
 
   WiFiClientSecure client;
-  // setInsecure() melewati verifikasi sertifikat HTTPS -- cara simpel yang umum
-  // dipakai di project ESP8266 hobi (root CA store penuh terlalu berat untuk ESP8266).
-  client.setInsecure();
+  client.setInsecure(); // lewati verifikasi sertifikat, cara simpel untuk project hobi
+
+  // PENTING untuk ESP8266: buffer TLS default (~16KB) terlalu besar untuk RAM
+  // ESP8266 (~50KB total). Kalau tidak diperkecil, setelah beberapa kali request
+  // heap jadi terfragmentasi dan handshake HTTPS berikutnya gagal timeout.
+  client.setBufferSizes(512, 512);
 
   HTTPClient http;
-  http.begin(client, API_URL);
-  http.addHeader("Content-Type", "application/json");
+  http.begin(client, STATUS_URL);
+  http.setTimeout(8000); // Vercel kadang perlu waktu lebih (cold start)
 
-  StaticJsonDocument<200> doc;
-  doc["device"] = DEVICE_NAME;
-  doc["status"] = buttonState;
+  int httpCode = http.GET();
 
-  String payload;
-  serializeJson(doc, payload);
-
-  Serial.print("Mengirim: ");
-  Serial.println(payload);
-
-  int httpCode = http.POST(payload);
-
-  if (httpCode > 0) {
+  if (httpCode == 200) {
     String response = http.getString();
-    Serial.printf("Response code: %d\n", httpCode);
+    Serial.print("Response: ");
     Serial.println(response);
+
+    StaticJsonDocument<256> doc;
+    DeserializationError err = deserializeJson(doc, response);
+
+    if (!err) {
+      const char* status = doc["status"];
+      bool shouldBeOn = status && strcmp(status, "ON") == 0;
+
+      Serial.print("status field = \"");
+      Serial.print(status ? status : "(null)");
+      Serial.print("\" -> shouldBeOn = ");
+      Serial.println(shouldBeOn ? "true" : "false");
+
+      // Selalu set ulang pin LED tiap poll (bukan cuma pas berubah),
+      // supaya tidak ada risiko LED "nyangkut" di state yang salah.
+      lastLedOn = shouldBeOn;
+      digitalWrite(led, shouldBeOn ? LOW : HIGH); // LED ESP-01 aktif LOW
+    } else {
+      Serial.print("Gagal parse JSON response: ");
+      Serial.println(err.c_str());
+    }
+  } else if (httpCode == 404) {
+    // Belum ada data sama sekali untuk device ini -> anggap OFF
+    lastLedOn = false;
+    digitalWrite(led, HIGH);
   } else {
-    Serial.printf("Gagal kirim, error: %s\n", http.errorToString(httpCode).c_str());
+    Serial.printf("GET gagal, kode: %d\n", httpCode);
   }
 
   http.end();
 }
 
 void setup() {
-  pinMode(buttonPin, INPUT_PULLUP);
   pinMode(led, OUTPUT);
-  digitalWrite(led, HIGH);  // default LED OFF
+  digitalWrite(led, HIGH); // default LED OFF
 
   Serial.begin(115200);
 
@@ -109,22 +129,10 @@ void setup() {
 }
 
 void loop() {
-  int state = digitalRead(buttonPin);
+  unsigned long now = millis();
 
-  // Kirim hanya kalau ada PERUBAHAN status tombol (bukan polling terus-menerus)
-  if (state != lastState) {
-    lastState = state;
-
-    if (state == LOW) {
-      digitalWrite(led, LOW);   // LED ON (ESP-01 LED aktif LOW)
-      Serial.println("Button -> ON");
-      publishStatus("ON");
-    } else {
-      digitalWrite(led, HIGH);  // LED OFF
-      Serial.println("Button -> OFF");
-      publishStatus("OFF");
-    }
-
-    delay(100); // debouncing sederhana
+  if (now - lastPollTime >= POLL_INTERVAL_MS) {
+    lastPollTime = now;
+    pollStatusAndSetLed();
   }
 }
