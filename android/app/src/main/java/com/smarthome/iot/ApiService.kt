@@ -13,6 +13,8 @@ interface ApiService {
     @GET("api/status/{device}")
     suspend fun getStatus(@Path("device") device: String): Response<DeviceStatusItem>
 
+    // Body fleksibel: cukup kirim "device" + field yang mau diubah saja,
+    // misal {"device":"ESP01_01","status3":"ON"} -- field lain tidak perlu disertakan.
     @POST("api/data")
-    suspend fun updateStatus(@Body request: UpdateStatusRequest): Response<UpdateStatusResponse>
+    suspend fun updateStatus(@Body body: Map<String, String>): Response<UpdateStatusResponse>
 }

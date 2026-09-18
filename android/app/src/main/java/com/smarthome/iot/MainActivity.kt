@@ -1,6 +1,5 @@
 package com.smarthome.iot
 
-import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -8,6 +7,7 @@ import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
 import com.smarthome.iot.databinding.ActivityMainBinding
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,12 +19,13 @@ class MainActivity : AppCompatActivity() {
     private val mainScope = CoroutineScope(Dispatchers.Main)
     private val handler = Handler(Looper.getMainLooper())
 
+    private lateinit var relayAdapter: RelayAdapter
+
     private var deviceNames: List<String> = emptyList()
     private var selectedDevice: String? = null
     private var isUpdating = false
 
-    // Auto-refresh label status tiap 5 detik, supaya sinkron kalau device
-    // diubah dari tempat lain (mis. langsung lewat API/tombol fisik).
+    // Auto-refresh tiap 5 detik, supaya tampilan tetap sinkron.
     private val pollIntervalMs = 5_000L
     private val pollRunnable = object : Runnable {
         override fun run() {
@@ -37,6 +38,12 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        relayAdapter = RelayAdapter { jsonKey, newStatus ->
+            updateRelay(jsonKey, newStatus)
+        }
+        binding.relayRecyclerView.layoutManager = LinearLayoutManager(this)
+        binding.relayRecyclerView.adapter = relayAdapter
 
         binding.swipeRefresh.setOnRefreshListener {
             loadDeviceListThenStatus()
@@ -53,9 +60,6 @@ class MainActivity : AppCompatActivity() {
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
-
-        binding.btnOn.setOnClickListener { updateStatus("ON") }
-        binding.btnOff.setOnClickListener { updateStatus("OFF") }
 
         loadDeviceListThenStatus()
     }
@@ -116,10 +120,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Ambil status terbaru untuk device yang sedang dipilih. */
+    /** Ambil status terbaru (5 relay + 3 suhu) untuk device yang sedang dipilih. */
     private fun loadStatus(showSpinner: Boolean) {
         val device = selectedDevice ?: return
-        if (isUpdating) return // jangan timpa tampilan pas lagi proses klik tombol
+        if (isUpdating) return
         if (showSpinner) binding.progressBar.visibility = android.view.View.VISIBLE
 
         mainScope.launch {
@@ -128,8 +132,6 @@ class MainActivity : AppCompatActivity() {
                 if (response.isSuccessful) {
                     binding.tvConnectionInfo.text = "Terhubung ke server"
                     response.body()?.let { bindStatus(it) }
-                } else if (response.code() == 404) {
-                    bindStatus(DeviceStatusItem(device, "OFF", "-"))
                 }
             } catch (e: Exception) {
                 binding.tvConnectionInfo.text = "Tidak terhubung ke server"
@@ -140,20 +142,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Kirim perintah ON/OFF ke server (dibaca ESP8266 lewat polling). */
-    private fun updateStatus(status: String) {
+    /** Update 1 relay saja -- field lain otomatis dipertahankan oleh backend. */
+    private fun updateRelay(jsonKey: String, newStatus: String) {
         val device = selectedDevice ?: return
         isUpdating = true
         binding.progressBar.visibility = android.view.View.VISIBLE
-        binding.btnOn.isEnabled = false
-        binding.btnOff.isEnabled = false
 
         mainScope.launch {
             try {
-                val response = RetrofitClient.apiService.updateStatus(UpdateStatusRequest(device, status))
+                val body = mapOf("device" to device, jsonKey to newStatus)
+                val response = RetrofitClient.apiService.updateStatus(body)
                 if (response.isSuccessful) {
                     response.body()?.data?.let { bindStatus(it) }
-                    Toast.makeText(this@MainActivity, "Status $device diubah ke $status", Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(this@MainActivity, "Gagal update (${response.code()})", Toast.LENGTH_SHORT).show()
                 }
@@ -162,23 +162,15 @@ class MainActivity : AppCompatActivity() {
             } finally {
                 isUpdating = false
                 binding.progressBar.visibility = android.view.View.GONE
-                binding.btnOn.isEnabled = true
-                binding.btnOff.isEnabled = true
             }
         }
     }
 
     private fun bindStatus(item: DeviceStatusItem) {
         binding.tvLastUpdate.text = "Update terakhir: ${item.time}"
-
-        if (item.status.equals("ON", ignoreCase = true)) {
-            binding.tvStatusLabel.text = "ON"
-            binding.tvStatusLabel.setTextColor(Color.parseColor("#2E7D32"))
-            binding.statusDot.setColorFilter(Color.parseColor("#4CAF50"))
-        } else {
-            binding.tvStatusLabel.text = "OFF"
-            binding.tvStatusLabel.setTextColor(Color.parseColor("#D32F2F"))
-            binding.statusDot.setColorFilter(Color.parseColor("#F44336"))
-        }
+        binding.tvSuhu1.text = "${item.suhu}\u00B0C"
+        binding.tvSuhu2.text = "${item.suhu2}\u00B0C"
+        binding.tvSuhu3.text = "${item.suhu3}\u00B0C"
+        relayAdapter.submitStatus(item)
     }
 }

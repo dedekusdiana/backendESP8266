@@ -11,6 +11,11 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
+// Kolom relay (ON/OFF) dan sensor suhu yang didukung tabel iot2.
+const STATUS_FIELDS = ['status', 'status2', 'status3', 'status4', 'status5'];
+const SUHU_FIELDS = ['suhu', 'suhu2', 'suhu3'];
+const ALL_FIELDS = [...STATUS_FIELDS, ...SUHU_FIELDS];
+
 // Health check
 app.get('/', (req, res) => {
   res.json({ status: 'ok', service: 'esp8266-iot2-backend' });
@@ -18,27 +23,47 @@ app.get('/', (req, res) => {
 
 // ---------------------------------------------------------------
 // POST /api/data
-// Dipanggil oleh ESP8266. Body JSON: { "device": "ESP8266_01", "status": "ON" }
-// Kolom "time" diisi otomatis oleh server (NOW()) supaya ESP8266 tidak perlu
-// punya jam/RTC sendiri. Kalau body menyertakan "time" (format ISO8601),
-// nilai itu yang dipakai sebagai gantinya.
+// Body JSON: { "device": "ESP01_01", "status": "ON" }  <- bisa kirim sebagian field saja
+// Field yang tidak dikirim akan otomatis diambil dari data terakhir device itu
+// (jadi app Android bisa update 1 relay saja tanpa perlu tahu status relay lain).
+// Field yang belum pernah ada sama sekali -> default 'OFF' (status) / '0' (suhu).
 // ---------------------------------------------------------------
 app.post('/api/data', async (req, res) => {
   try {
-    const { device, status, time } = req.body;
-
-    if (!device || !status) {
-      return res.status(400).json({ error: 'Field "device" dan "status" wajib diisi' });
+    const { device } = req.body;
+    if (!device) {
+      return res.status(400).json({ error: 'Field "device" wajib diisi' });
     }
 
-    const query = time
-      ? `INSERT INTO iot2 (device, status, time) VALUES ($1, $2, $3) RETURNING *`
-      : `INSERT INTO iot2 (device, status) VALUES ($1, $2) RETURNING *`;
-    const params = time ? [device, status, time] : [device, status];
+    const latestResult = await pool.query(
+      `SELECT * FROM iot2 WHERE device = $1 ORDER BY time DESC LIMIT 1`,
+      [device]
+    );
+    const latest = latestResult.rows[0] || {};
 
-    const { rows } = await pool.query(query, params);
+    const merged = {};
+    for (const field of ALL_FIELDS) {
+      if (req.body[field] !== undefined) {
+        merged[field] = String(req.body[field]);
+      } else if (latest[field] !== undefined) {
+        merged[field] = latest[field];
+      } else {
+        merged[field] = field.startsWith('suhu') ? '0' : 'OFF';
+      }
+    }
 
-    res.status(201).json({ success: true, data: rows[0] });
+    const insertResult = await pool.query(
+      `INSERT INTO iot2 (device, status, status2, status3, status4, status5, suhu, suhu2, suhu3)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING *`,
+      [
+        device,
+        merged.status, merged.status2, merged.status3, merged.status4, merged.status5,
+        merged.suhu, merged.suhu2, merged.suhu3,
+      ]
+    );
+
+    res.status(201).json({ success: true, data: insertResult.rows[0] });
   } catch (err) {
     console.error('Error in POST /api/data:', err);
     res.status(500).json({ error: 'Gagal menyimpan data' });
@@ -50,7 +75,7 @@ app.get('/api/data', async (req, res) => {
   try {
     const limit = Math.min(Number(req.query.limit) || 50, 500);
     const { rows } = await pool.query(
-      `SELECT id, device, status, time FROM iot2 ORDER BY time DESC LIMIT $1`,
+      `SELECT * FROM iot2 ORDER BY time DESC LIMIT $1`,
       [limit]
     );
     res.json({ data: rows });
@@ -66,7 +91,7 @@ app.get('/api/data/:device', async (req, res) => {
     const { device } = req.params;
     const limit = Math.min(Number(req.query.limit) || 50, 500);
     const { rows } = await pool.query(
-      `SELECT id, device, status, time FROM iot2 WHERE device = $1 ORDER BY time DESC LIMIT $2`,
+      `SELECT * FROM iot2 WHERE device = $1 ORDER BY time DESC LIMIT $2`,
       [device, limit]
     );
     res.json({ device, data: rows });
@@ -76,11 +101,11 @@ app.get('/api/data/:device', async (req, res) => {
   }
 });
 
-// GET /api/status -> status terkini (baris terakhir) untuk setiap device
+// GET /api/status -> baris terakhir untuk setiap device (semua kolom)
 app.get('/api/status', async (req, res) => {
   try {
     const query = `
-      SELECT DISTINCT ON (device) device, status, time
+      SELECT DISTINCT ON (device) *
       FROM iot2
       ORDER BY device, time DESC
     `;
@@ -92,12 +117,12 @@ app.get('/api/status', async (req, res) => {
   }
 });
 
-// GET /api/status/:device -> status terkini untuk SATU device (dipakai ESP8266 buat polling LED)
+// GET /api/status/:device -> baris terakhir untuk SATU device (semua kolom)
 app.get('/api/status/:device', async (req, res) => {
   try {
     const { device } = req.params;
     const { rows } = await pool.query(
-      `SELECT device, status, time FROM iot2 WHERE device = $1 ORDER BY time DESC LIMIT 1`,
+      `SELECT * FROM iot2 WHERE device = $1 ORDER BY time DESC LIMIT 1`,
       [device]
     );
 
