@@ -1,6 +1,7 @@
 package com.smarthome.iot
 
 import android.app.AlertDialog
+import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -28,7 +29,6 @@ class MainActivity : AppCompatActivity() {
     private var deviceNames: List<String> = emptyList()
     private var selectedDevice: String? = null
     private var isUpdating = false
-    private var lastKnownStatus: DeviceStatusItem? = null
 
     private val pollIntervalMs = 5_000L
     private val pollRunnable = object : Runnable {
@@ -128,13 +128,21 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun setDatabaseStatus(connected: Boolean, detail: String? = null) {
+        binding.tvDatabaseStatus.text = if (connected) "Connected" else "Terputus"
+        binding.tvDatabaseStatus.setTextColor(
+            Color.parseColor(if (connected) "#2E7D32" else "#D32F2F")
+        )
+        if (detail != null) binding.tvConnectionInfo.text = detail
+    }
+
     private fun loadDeviceListThenStatus() {
         binding.progressBar.visibility = android.view.View.VISIBLE
         mainScope.launch {
             try {
                 val response = RetrofitClient.apiService.getAllStatus()
                 if (response.isSuccessful) {
-                    binding.tvConnectionInfo.text = "Terhubung ke server"
+                    setDatabaseStatus(true, "Terhubung ke server")
 
                     val devices = response.body()?.devices.orEmpty()
                     deviceNames = devices.map { it.device }
@@ -161,12 +169,12 @@ class MainActivity : AppCompatActivity() {
 
                     loadStatus(showSpinner = false)
                 } else {
-                    binding.tvConnectionInfo.text = "Error server (${response.code()})"
+                    setDatabaseStatus(false, "Error server (${response.code()})")
                     binding.progressBar.visibility = android.view.View.GONE
                     binding.swipeRefresh.isRefreshing = false
                 }
             } catch (e: Exception) {
-                binding.tvConnectionInfo.text = "Tidak terhubung ke server"
+                setDatabaseStatus(false, "Tidak terhubung ke server")
                 Toast.makeText(this@MainActivity, "Gagal konek: ${e.message}", Toast.LENGTH_SHORT).show()
                 binding.progressBar.visibility = android.view.View.GONE
                 binding.swipeRefresh.isRefreshing = false
@@ -183,11 +191,11 @@ class MainActivity : AppCompatActivity() {
             try {
                 val response = RetrofitClient.apiService.getStatus(device)
                 if (response.isSuccessful) {
-                    binding.tvConnectionInfo.text = "Terhubung ke server"
+                    setDatabaseStatus(true, "Terhubung ke server")
                     response.body()?.let { bindStatus(it) }
                 }
             } catch (e: Exception) {
-                binding.tvConnectionInfo.text = "Tidak terhubung ke server"
+                setDatabaseStatus(false, "Tidak terhubung ke server")
             } finally {
                 binding.progressBar.visibility = android.view.View.GONE
                 binding.swipeRefresh.isRefreshing = false
@@ -219,7 +227,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun bindStatus(item: DeviceStatusItem) {
-        lastKnownStatus = item
         val device = selectedDevice ?: item.device
 
         binding.tvLastUpdate.text = "Update terakhir: ${TimeUtils.toJakartaTime(item.time)}"
@@ -227,6 +234,12 @@ class MainActivity : AppCompatActivity() {
         binding.cardSuhu1.tvSuhuValue.text = "${item.valueForSuhu("suhu")}\u00B0C"
         binding.cardSuhu2.tvSuhuValue.text = "${item.valueForSuhu("suhu2")}\u00B0C"
         binding.cardSuhu3.tvSuhuValue.text = "${item.valueForSuhu("suhu3")}\u00B0C"
+
+        val isOnline = item.statusDevice.equals("online", ignoreCase = true)
+        binding.tvDeviceStatus.text = if (isOnline) "Online" else "Offline"
+        binding.tvDeviceStatus.setTextColor(
+            Color.parseColor(if (isOnline) "#2E7D32" else "#D32F2F")
+        )
 
         relayAdapter.submitStatus(device, item)
     }

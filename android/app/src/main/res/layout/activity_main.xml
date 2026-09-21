@@ -35,18 +35,96 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Smart Home IoT"
+                        android:text="MQTT - Neon PostgreSQL - Vercel - Android"
                         android:textColor="#FFFFFF"
-                        android:textSize="24sp"
+                        android:textSize="18sp"
                         android:textStyle="bold" />
 
-                    <TextView
-                        android:layout_width="match_parent"
+                </LinearLayout>
+
+                <!-- Status: Database + Device -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginHorizontal="12dp"
+                    android:layout_marginTop="16dp">
+
+                    <com.google.android.material.card.MaterialCardView
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:text="Kontrol relay &amp; pantau suhu"
-                        android:textColor="#CFE3FA"
-                        android:textSize="13sp"
-                        android:layout_marginTop="2dp" />
+                        android:layout_weight="1"
+                        android:layout_margin="4dp"
+                        app:cardCornerRadius="14dp"
+                        app:cardElevation="0dp"
+                        app:strokeWidth="1dp"
+                        app:strokeColor="#E8EAF0"
+                        app:cardBackgroundColor="@color/cardBackground">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="12dp">
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="STATUS DATABASE"
+                                android:textSize="10sp"
+                                android:letterSpacing="0.03"
+                                android:textColor="@color/mutedText"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvDatabaseStatus"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:textSize="15sp"
+                                android:textStyle="bold"
+                                tools:text="Connected" />
+
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <com.google.android.material.card.MaterialCardView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_margin="4dp"
+                        app:cardCornerRadius="14dp"
+                        app:cardElevation="0dp"
+                        app:strokeWidth="1dp"
+                        app:strokeColor="#E8EAF0"
+                        app:cardBackgroundColor="@color/cardBackground">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="12dp">
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="STATUS DEVICE"
+                                android:textSize="10sp"
+                                android:letterSpacing="0.03"
+                                android:textColor="@color/mutedText"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvDeviceStatus"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:textSize="15sp"
+                                android:textStyle="bold"
+                                tools:text="Online" />
+
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
 
                 </LinearLayout>
 

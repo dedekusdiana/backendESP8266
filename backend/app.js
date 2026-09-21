@@ -12,6 +12,20 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
+// Kalau sudah lebih dari sekian detik tanpa kabar (heartbeat) dari device,
+// dianggap OFFLINE. Heartbeat ESP8266 dikirim tiap 15 detik, threshold 35 detik
+// (lebih longgar dari interval heartbeat) supaya tidak "kedip" karena jitter jaringan.
+const OFFLINE_THRESHOLD_SECONDS = Number(process.env.OFFLINE_THRESHOLD_SECONDS || 35);
+
+function withDeviceStatus(row) {
+  if (!row) return row;
+  const secondsSinceUpdate = (Date.now() - new Date(row.time).getTime()) / 1000;
+  return {
+    ...row,
+    status_device: secondsSinceUpdate < OFFLINE_THRESHOLD_SECONDS ? 'online' : 'offline',
+  };
+}
+
 // Kolom relay (ON/OFF) dan sensor suhu yang didukung tabel iot2.
 const STATUS_FIELDS = ['status', 'status2', 'status3', 'status4', 'status5'];
 const SUHU_FIELDS = ['suhu', 'suhu2', 'suhu3'];
@@ -117,7 +131,7 @@ app.post('/api/data', async (req, res) => {
     // Publish ke HiveMQ (best-effort, tidak memblokir response kalau gagal)
     await publishUpdate(device, savedRow);
 
-    res.status(201).json({ success: true, data: savedRow });
+    res.status(201).json({ success: true, data: withDeviceStatus(savedRow) });
   } catch (err) {
     console.error('Error in POST /api/data:', err);
     res.status(500).json({ error: 'Gagal menyimpan data' });
@@ -164,7 +178,7 @@ app.get('/api/status', async (req, res) => {
       ORDER BY device, time DESC
     `;
     const { rows } = await pool.query(query);
-    res.json({ devices: rows });
+    res.json({ devices: rows.map(withDeviceStatus) });
   } catch (err) {
     console.error('Error in GET /api/status:', err);
     res.status(500).json({ error: 'Gagal mengambil status' });
@@ -184,7 +198,7 @@ app.get('/api/status/:device', async (req, res) => {
       return res.status(404).json({ error: `Belum ada data untuk device "${device}"` });
     }
 
-    res.json(rows[0]);
+    res.json(withDeviceStatus(rows[0]));
   } catch (err) {
     console.error('Error in GET /api/status/:device:', err);
     res.status(500).json({ error: 'Gagal mengambil status device' });

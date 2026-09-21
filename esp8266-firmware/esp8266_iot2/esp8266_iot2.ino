@@ -1,26 +1,24 @@
 /*
-  ESP-01 (ESP8266) -- SUBSCRIBE ke HiveMQ Cloud -- nyalakan LED
+  ESP-01 (ESP8266) -- SUBSCRIBE ke HiveMQ Cloud (kontrol relay) + HEARTBEAT ke Vercel (status online)
 
-  Alur (PUSH, bukan polling lagi):
-  1. ESP8266 konek ke WiFi
-  2. ESP8266 konek ke broker HiveMQ Cloud (MQTT over TLS, port 8883)
-  3. Subscribe ke topic: smarthome/<DEVICE_NAME>/status
-  4. Setiap app Android update status -> backend Vercel publish ke topic itu
-     -> broker langsung PUSH pesan ke ESP8266 -> LED update seketika
-     (tidak ada lagi jeda polling 3 detik)
-
-  Payload yang diterima (dikirim backend), contoh:
-  {"device":"ESP01_01","status":"ON","status2":"OFF",...,"suhu":"0",...}
-  Firmware ini cuma pakai field "status" (relay 1), karena ESP-01 cuma
-  punya 1 pin output yang bisa dipakai (GPIO0).
+  Dua jalur berjalan bersamaan:
+  1. MQTT (HiveMQ Cloud) -- subscribe ke smarthome/<DEVICE_NAME>/status, buat kontrol
+     relay real-time (push instan begitu app Android update lewat backend).
+  2. HTTPS (Vercel API) -- kirim "heartbeat" POST /api/data tiap 15 detik, isinya cuma
+     {"device":"ESP01_01"} tanpa field lain, supaya backend tahu device ini masih hidup.
+     Backend yang menghitung sendiri: kalau lebih dari 35 detik tanpa heartbeat,
+     otomatis dianggap OFFLINE (field "status_device" di response API).
+     App Android baca status ini lewat REST API biasa, SAMA seperti suhu & relay --
+     tidak perlu connect ke broker MQTT sama sekali.
 
   Library yang dibutuhkan (install lewat Library Manager di Arduino IDE):
   - PubSubClient (by Nick O'Leary)
   - ArduinoJson (by Benoit Blanchon)
-  - ESP8266WiFi, WiFiClientSecure (bawaan board package ESP8266)
+  - ESP8266WiFi, WiFiClientSecure, ESP8266HTTPClient (bawaan board package ESP8266)
 */
 
 #include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
@@ -29,7 +27,10 @@
 const char* WIFI_SSID     = "IOT";
 const char* WIFI_PASSWORD = "rayyanazka";
 
-// Detail broker HiveMQ Cloud kamu (dari tab Overview di HiveMQ Console)
+// Backend Vercel (dipakai buat heartbeat status online)
+const char* API_URL = "https://backend-esp-8266.vercel.app/api/data";
+
+// Broker HiveMQ Cloud (dipakai buat kontrol relay real-time)
 const char* MQTT_HOST = "99a913d804834091bc755acbd559d13f.s1.eu.hivemq.cloud";
 const int   MQTT_PORT = 8883;
 const char* MQTT_USER = "dede_smarthome";
@@ -37,14 +38,19 @@ const char* MQTT_PASS = "rayyanazka";
 
 // Nama device ini -- HARUS SAMA dengan yang dipakai di app Android & backend
 const char* DEVICE_NAME = "ESP01_01";
+
+// Interval heartbeat (ms). Backend anggap OFFLINE kalau lebih dari 35 detik
+// tanpa heartbeat, jadi jangan naikkan ini terlalu tinggi (mis. di atas 30 detik).
+const unsigned long HEARTBEAT_INTERVAL_MS = 15000;
 // ------------------------------------------------------------------
 
 const int led = 0;  // LED bawaan ESP-01 (GPIO0, aktif LOW)
 
-WiFiClientSecure secureClient;
-PubSubClient mqttClient(secureClient);
+WiFiClientSecure secureMqttClient;
+PubSubClient mqttClient(secureMqttClient);
 
 char mqttTopic[64];
+unsigned long lastHeartbeat = 0;
 
 void connectWiFi() {
   Serial.print("Menghubungkan ke WiFi: ");
@@ -97,7 +103,6 @@ void connectMqtt() {
   while (!mqttClient.connected()) {
     Serial.print("Menghubungkan ke HiveMQ...");
 
-    // Client ID harus unik per device yang konek ke broker yang sama
     String clientId = String("esp8266-") + DEVICE_NAME;
 
     if (mqttClient.connect(clientId.c_str(), MQTT_USER, MQTT_PASS)) {
@@ -117,6 +122,42 @@ void connectMqtt() {
   }
 }
 
+// Kirim heartbeat kecil ke backend Vercel -- cuma buat kasih tahu "saya masih hidup".
+// Field lain (status relay, suhu) TIDAK ikut dikirim & TIDAK berubah -- backend otomatis
+// mempertahankan nilai lama, cuma kolom "time" yang ter-refresh.
+void sendHeartbeat() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi tidak terhubung, skip heartbeat.");
+    return;
+  }
+
+  WiFiClientSecure client;
+  client.setInsecure();
+  client.setBufferSizes(512, 512); // hemat memori, penting untuk ESP8266
+
+  HTTPClient http;
+  http.begin(client, API_URL);
+  http.addHeader("Content-Type", "application/json");
+  http.setTimeout(8000);
+
+  StaticJsonDocument<64> doc;
+  doc["device"] = DEVICE_NAME;
+
+  String payload;
+  serializeJson(doc, payload);
+
+  int httpCode = http.POST(payload);
+  if (httpCode > 0) {
+    Serial.print("Heartbeat terkirim, kode: ");
+    Serial.println(httpCode);
+  } else {
+    Serial.print("Heartbeat gagal: ");
+    Serial.println(http.errorToString(httpCode));
+  }
+
+  http.end();
+}
+
 void setup() {
   pinMode(led, OUTPUT);
   digitalWrite(led, HIGH); // default LED OFF
@@ -127,14 +168,13 @@ void setup() {
 
   connectWiFi();
 
-  // Lewati verifikasi sertifikat -- cara simpel yang umum dipakai di project
-  // ESP8266 hobi (root CA store lengkap terlalu berat untuk ESP8266).
-  secureClient.setInsecure();
-
+  secureMqttClient.setInsecure();
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setCallback(onMqttMessage);
 
   connectMqtt();
+  sendHeartbeat();
+  lastHeartbeat = millis();
 }
 
 void loop() {
@@ -145,6 +185,10 @@ void loop() {
   if (!mqttClient.connected()) {
     connectMqtt();
   }
+  mqttClient.loop();
 
-  mqttClient.loop(); // WAJIB dipanggil terus supaya bisa terima pesan masuk & jaga koneksi
+  if (millis() - lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
+    lastHeartbeat = millis();
+    sendHeartbeat();
+  }
 }
