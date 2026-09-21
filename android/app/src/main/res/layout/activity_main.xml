@@ -35,10 +35,18 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="MQTT - Neon PostgreSQL - Vercel - Android"
+                        android:text="Smart Home IoT"
                         android:textColor="#FFFFFF"
-                        android:textSize="18sp"
+                        android:textSize="22sp"
                         android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="MQTT - Neon PostgreSQL - Vercel - Android"
+                        android:textColor="#CFE3FA"
+                        android:textSize="12sp"
+                        android:layout_marginTop="2dp" />
 
                 </LinearLayout>
 
