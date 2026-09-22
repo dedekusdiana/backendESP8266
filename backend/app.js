@@ -19,10 +19,13 @@ const OFFLINE_THRESHOLD_SECONDS = Number(process.env.OFFLINE_THRESHOLD_SECONDS |
 
 function withDeviceStatus(row) {
   if (!row) return row;
-  const secondsSinceUpdate = (Date.now() - new Date(row.time).getTime()) / 1000;
+  const heartbeatTime = row.last_heartbeat || null;
+  const secondsSinceHeartbeat = heartbeatTime
+    ? (Date.now() - new Date(heartbeatTime).getTime()) / 1000
+    : Infinity; // belum pernah heartbeat sama sekali -> anggap offline
   return {
     ...row,
-    status_device: secondsSinceUpdate < OFFLINE_THRESHOLD_SECONDS ? 'online' : 'offline',
+    status_device: secondsSinceHeartbeat < OFFLINE_THRESHOLD_SECONDS ? 'online' : 'offline',
   };
 }
 
@@ -135,6 +138,43 @@ app.post('/api/data', async (req, res) => {
   } catch (err) {
     console.error('Error in POST /api/data:', err);
     res.status(500).json({ error: 'Gagal menyimpan data' });
+  }
+});
+
+// ---------------------------------------------------------------
+// POST /api/heartbeat
+// Dipanggil KHUSUS oleh ESP8266 tiap 15 detik, TERPISAH dari /api/data (kontrol relay).
+// Cuma nyentuh kolom last_heartbeat -- supaya update relay dari APP tidak ikut
+// bikin status_device keliatan online.
+// ---------------------------------------------------------------
+app.post('/api/heartbeat', async (req, res) => {
+  try {
+    const { device, suhu, suhu2, suhu3 } = req.body;
+    if (!device) {
+      return res.status(400).json({ error: 'Field "device" wajib diisi' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO iot2 (device, suhu, suhu2, suhu3, last_heartbeat)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (device) DO UPDATE SET
+         suhu = COALESCE(EXCLUDED.suhu, iot2.suhu),
+         suhu2 = COALESCE(EXCLUDED.suhu2, iot2.suhu2),
+         suhu3 = COALESCE(EXCLUDED.suhu3, iot2.suhu3),
+         last_heartbeat = NOW()
+       RETURNING *`,
+      [
+        device,
+        suhu !== undefined ? String(suhu) : null,
+        suhu2 !== undefined ? String(suhu2) : null,
+        suhu3 !== undefined ? String(suhu3) : null,
+      ]
+    );
+
+    res.json({ success: true, data: withDeviceStatus(result.rows[0]) });
+  } catch (err) {
+    console.error('Error in POST /api/heartbeat:', err);
+    res.status(500).json({ error: 'Gagal menyimpan heartbeat' });
   }
 });
 

@@ -4,8 +4,11 @@
   Dua jalur berjalan bersamaan:
   1. MQTT (HiveMQ Cloud) -- subscribe ke smarthome/<DEVICE_NAME>/status, buat kontrol
      relay real-time (push instan begitu app Android update lewat backend).
-  2. HTTPS (Vercel API) -- kirim "heartbeat" POST /api/data tiap 15 detik, isinya cuma
-     {"device":"ESP01_01"} tanpa field lain, supaya backend tahu device ini masih hidup.
+  2. HTTPS (Vercel API) -- kirim "heartbeat" POST /api/heartbeat tiap 15 detik, isinya
+     {"device":"ESP01_01","suhu":"..","suhu2":"..","suhu3":".."} -- suhu di sini DUMMY
+     (angka acak), karena ESP-01 sudah tidak punya pin sensor tersisa. Endpoint ini
+     TERPISAH dari /api/data (kontrol relay), supaya update relay dari app Android
+     tidak ikut dianggap sebagai heartbeat device.
      Backend yang menghitung sendiri: kalau lebih dari 35 detik tanpa heartbeat,
      otomatis dianggap OFFLINE (field "status_device" di response API).
      App Android baca status ini lewat REST API biasa, SAMA seperti suhu & relay --
@@ -28,7 +31,7 @@ const char* WIFI_SSID     = "IOT";
 const char* WIFI_PASSWORD = "rayyanazka";
 
 // Backend Vercel (dipakai buat heartbeat status online)
-const char* API_URL = "https://backend-esp-8266.vercel.app/api/data";
+const char* HEARTBEAT_URL = "https://backend-esp-8266.vercel.app/api/heartbeat";
 
 // Broker HiveMQ Cloud (dipakai buat kontrol relay real-time)
 const char* MQTT_HOST = "99a913d804834091bc755acbd559d13f.s1.eu.hivemq.cloud";
@@ -122,9 +125,10 @@ void connectMqtt() {
   }
 }
 
-// Kirim heartbeat kecil ke backend Vercel -- cuma buat kasih tahu "saya masih hidup".
-// Field lain (status relay, suhu) TIDAK ikut dikirim & TIDAK berubah -- backend otomatis
-// mempertahankan nilai lama, cuma kolom "time" yang ter-refresh.
+// Kirim heartbeat ke backend Vercel -- kasih tahu "saya masih hidup", SEKALIAN
+// kirim data suhu (dummy/simulasi, karena ESP-01 sudah tidak punya pin sensor lagi).
+// Field relay (status..status5) TIDAK ikut dikirim -- backend otomatis mempertahankan
+// nilai lama untuk itu, cuma suhu & last_heartbeat yang ter-refresh.
 void sendHeartbeat() {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("WiFi tidak terhubung, skip heartbeat.");
@@ -136,12 +140,20 @@ void sendHeartbeat() {
   client.setBufferSizes(512, 512); // hemat memori, penting untuk ESP8266
 
   HTTPClient http;
-  http.begin(client, API_URL);
+  http.begin(client, HEARTBEAT_URL);
   http.addHeader("Content-Type", "application/json");
   http.setTimeout(8000);
 
-  StaticJsonDocument<64> doc;
+  // Suhu dummy, rentang 25.0 - 35.0 derajat (satu angka di belakang koma)
+  float suhu1 = random(250, 350) / 10.0;
+  float suhu2 = random(250, 350) / 10.0;
+  float suhu3 = random(250, 350) / 10.0;
+
+  StaticJsonDocument<200> doc;
   doc["device"] = DEVICE_NAME;
+  doc["suhu"] = String(suhu1, 1);
+  doc["suhu2"] = String(suhu2, 1);
+  doc["suhu3"] = String(suhu3, 1);
 
   String payload;
   serializeJson(doc, payload);
@@ -149,7 +161,9 @@ void sendHeartbeat() {
   int httpCode = http.POST(payload);
   if (httpCode > 0) {
     Serial.print("Heartbeat terkirim, kode: ");
-    Serial.println(httpCode);
+    Serial.print(httpCode);
+    Serial.print(" | ");
+    Serial.println(payload);
   } else {
     Serial.print("Heartbeat gagal: ");
     Serial.println(http.errorToString(httpCode));
@@ -163,6 +177,7 @@ void setup() {
   digitalWrite(led, HIGH); // default LED OFF
 
   Serial.begin(115200);
+  randomSeed(micros()); // biar nilai suhu dummy tidak sama persis tiap boot
 
   snprintf(mqttTopic, sizeof(mqttTopic), "smarthome/%s/status", DEVICE_NAME);
 
