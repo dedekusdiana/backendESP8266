@@ -1,77 +1,98 @@
 <?xml version="1.0" encoding="utf-8"?>
-<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+<com.google.android.material.card.MaterialCardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginBottom="10dp"
-    app:cardCornerRadius="16dp"
-    app:cardElevation="0dp"
-    app:strokeWidth="1dp"
-    app:strokeColor="#D9E7F2"
-    app:cardBackgroundColor="#FFFFFF">
+    android:layout_marginTop="3dp"
+    android:layout_marginBottom="3dp"
+    app:cardBackgroundColor="#FFFFFF"
+    app:cardCornerRadius="10dp"
+    app:cardElevation="1dp"
+    app:strokeColor="#E2E8F0"
+    app:strokeWidth="1dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:padding="12dp">
+        android:orientation="horizontal"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="8dp">
 
+        <!-- Icon Container -->
         <FrameLayout
-            android:layout_width="52dp"
-            android:layout_height="52dp"
-            android:background="@drawable/bg_icon_circle">
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:background="@drawable/bg_device_icon">
+
             <ImageView
-                android:id="@+id/relayIcon"
-                android:layout_width="28dp"
-                android:layout_height="28dp"
+                android:id="@+id/imgRelayIcon"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
                 android:layout_gravity="center"
                 android:src="@drawable/ic_relay"
-                android:contentDescription="Relay" />
+                app:tint="#4C6EF5" />
         </FrameLayout>
 
-        <ImageView
-            android:id="@+id/relayDot"
-            android:layout_width="8dp"
-            android:layout_height="8dp"
-            android:layout_marginStart="10dp"
-            android:layout_marginEnd="10dp"
-            android:src="@drawable/bg_online_dot"
-            android:contentDescription="Relay status" />
-
+        <!-- Label & Detail Container -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:layout_marginEnd="6dp"
             android:layout_weight="1"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-            <TextView
-                android:id="@+id/tvRelayLabel"
+            android:orientation="vertical">
+
+            <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:textColor="@color/darkNavy"
-                tools:text="Relay 1" />
-            <ImageButton
-                android:id="@+id/btnEditRelayLabel"
-                android:layout_width="26dp"
-                android:layout_height="26dp"
-                android:layout_marginStart="5dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="Edit nama relay"
-                android:padding="4dp"
-                android:src="@android:drawable/ic_menu_edit"
-                app:tint="#9BAAB7" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/tvRelayLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textColor="#2D3748"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    tools:text="Kipas Blower" />
+
+                <ImageView
+                    android:id="@+id/btnEditLabel"
+                    android:layout_width="14dp"
+                    android:layout_height="14dp"
+                    android:layout_marginStart="4dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:padding="2dp"
+                    android:src="@android:drawable/ic_menu_edit"
+                    app:tint="#A0AEC0" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tvRelayKey"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#A0AEC0"
+                android:textSize="9sp"
+                tools:text="rel1 • Waktu: 10:30" />
+
         </LinearLayout>
 
+        <!-- Switch Control -->
         <com.google.android.material.switchmaterial.SwitchMaterial
             android:id="@+id/switchRelay"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:minWidth="74dp"
-            app:thumbTint="@color/cardBackground"
-            app:trackTint="@color/switchTrackTint" />
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            app:useMaterialThemeColors="false" />
+
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>
