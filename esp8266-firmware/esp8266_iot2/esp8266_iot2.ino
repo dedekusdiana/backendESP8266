@@ -163,16 +163,28 @@ void sendHeartbeat() {
   http.addHeader("Content-Type", "application/json");
   http.setTimeout(10000); // dilonggarkan -- MQTT sekarang toleran (keepalive 60s), jadi aman dikasih waktu lebih
 
-  // Suhu dummy, rentang 25.0 - 35.0 derajat (satu angka di belakang koma)
+  // Suhu + kelembaban dummy, digabung jadi satu teks (bukan kolom terpisah)
   float suhu1 = random(250, 350) / 10.0;
   float suhu2 = random(250, 350) / 10.0;
   float suhu3 = random(250, 350) / 10.0;
+  int lembab1 = random(40, 90);
+  int lembab2 = random(40, 90);
+  int lembab3 = random(40, 90);
 
-  StaticJsonDocument<200> doc;
+  String suhuText1 = String(suhu1, 1) + "C, " + String(lembab1) + "%RH";
+  String suhuText2 = String(suhu2, 1) + "C, " + String(lembab2) + "%RH";
+  String suhuText3 = String(suhu3, 1) + "C, " + String(lembab3) + "%RH";
+
+  // Status cuaca dummy, acak salah satu
+  const char* cuacaOptions[] = { "Cerah", "Hujan", "Mendung" };
+  const char* cuaca = cuacaOptions[random(0, 3)];
+
+  StaticJsonDocument<256> doc;
   doc["device"] = DEVICE_NAME;
-  doc["suhu"] = String(suhu1, 1);
-  doc["suhu2"] = String(suhu2, 1);
-  doc["suhu3"] = String(suhu3, 1);
+  doc["suhu"] = suhuText1;
+  doc["suhu2"] = suhuText2;
+  doc["suhu3"] = suhuText3;
+  doc["cuaca"] = cuaca;
 
   String payload;
   serializeJson(doc, payload);

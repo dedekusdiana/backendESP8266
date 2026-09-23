@@ -13,6 +13,7 @@ data class DeviceStatusItem(
     @SerializedName("suhu") val suhu: String,
     @SerializedName("suhu2") val suhu2: String,
     @SerializedName("suhu3") val suhu3: String,
+    @SerializedName("cuaca") val cuaca: String? = null,
     @SerializedName("time") val time: String,
     @SerializedName("status_device") val statusDevice: String? = null
 )

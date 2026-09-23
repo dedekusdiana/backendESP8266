@@ -216,6 +216,63 @@
 
                 </LinearLayout>
 
+                <!-- Cuaca -->
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="12dp"
+                    android:layout_marginTop="8dp"
+                    app:cardCornerRadius="14dp"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="1dp"
+                    app:strokeColor="#E8EAF0"
+                    app:cardBackgroundColor="@color/cardBackground">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:padding="12dp">
+
+                        <TextView
+                            android:id="@+id/tvCuacaIcon"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textSize="24sp"
+                            android:layout_marginEnd="10dp"
+                            tools:text="\u2600\uFE0F" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="KONDISI CUACA"
+                                android:textSize="10sp"
+                                android:letterSpacing="0.03"
+                                android:textColor="@color/mutedText"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvCuacaValue"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:textSize="15sp"
+                                android:textStyle="bold"
+                                android:textColor="@color/darkNavy"
+                                tools:text="Cerah" />
+
+                        </LinearLayout>
+
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
                 <!-- Relay list -->
                 <TextView
                     android:layout_width="match_parent"

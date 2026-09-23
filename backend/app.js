@@ -151,18 +151,19 @@ app.post('/api/data', async (req, res) => {
 // ---------------------------------------------------------------
 app.post('/api/heartbeat', async (req, res) => {
   try {
-    const { device, suhu, suhu2, suhu3 } = req.body;
+    const { device, suhu, suhu2, suhu3, cuaca } = req.body;
     if (!device) {
       return res.status(400).json({ error: 'Field "device" wajib diisi' });
     }
 
     const result = await pool.query(
-      `INSERT INTO iot2 (device, suhu, suhu2, suhu3, last_heartbeat)
-       VALUES ($1, $2, $3, $4, NOW())
+      `INSERT INTO iot2 (device, suhu, suhu2, suhu3, cuaca, last_heartbeat)
+       VALUES ($1, $2, $3, $4, $5, NOW())
        ON CONFLICT (device) DO UPDATE SET
          suhu = COALESCE(EXCLUDED.suhu, iot2.suhu),
          suhu2 = COALESCE(EXCLUDED.suhu2, iot2.suhu2),
          suhu3 = COALESCE(EXCLUDED.suhu3, iot2.suhu3),
+         cuaca = COALESCE(EXCLUDED.cuaca, iot2.cuaca),
          last_heartbeat = NOW()
        RETURNING *`,
       [
@@ -170,6 +171,7 @@ app.post('/api/heartbeat', async (req, res) => {
         suhu !== undefined ? String(suhu) : null,
         suhu2 !== undefined ? String(suhu2) : null,
         suhu3 !== undefined ? String(suhu3) : null,
+        cuaca !== undefined ? String(cuaca) : null,
       ]
     );
 

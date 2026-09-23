@@ -231,9 +231,18 @@ class MainActivity : AppCompatActivity() {
 
         binding.tvLastUpdate.text = "Update terakhir: ${TimeUtils.toJakartaTime(item.time)}"
 
-        binding.cardSuhu1.tvSuhuValue.text = "${item.valueForSuhu("suhu")}\u00B0C"
-        binding.cardSuhu2.tvSuhuValue.text = "${item.valueForSuhu("suhu2")}\u00B0C"
-        binding.cardSuhu3.tvSuhuValue.text = "${item.valueForSuhu("suhu3")}\u00B0C"
+        binding.cardSuhu1.tvSuhuValue.text = item.valueForSuhu("suhu")
+        binding.cardSuhu2.tvSuhuValue.text = item.valueForSuhu("suhu2")
+        binding.cardSuhu3.tvSuhuValue.text = item.valueForSuhu("suhu3")
+
+        val cuaca = item.cuaca ?: "-"
+        binding.tvCuacaValue.text = cuaca
+        binding.tvCuacaIcon.text = when (cuaca.lowercase()) {
+            "hujan" -> "\uD83C\uDF27\uFE0F"   // 🌧️
+            "mendung" -> "\u2601\uFE0F"        // ☁️
+            "cerah" -> "\u2600\uFE0F"          // ☀️
+            else -> "\u2753"                    // ❓
+        }
 
         val isOnline = item.statusDevice.equals("online", ignoreCase = true)
         binding.tvDeviceStatus.text = if (isOnline) "Online" else "Offline"
