@@ -237,12 +237,12 @@ class MainActivity : AppCompatActivity() {
 
         val cuaca = item.cuaca ?: "-"
         binding.tvCuacaValue.text = cuaca
-        binding.tvCuacaIcon.text = when (cuaca.lowercase()) {
-            "hujan" -> "\uD83C\uDF27\uFE0F"   // 🌧️
-            "mendung" -> "\u2601\uFE0F"        // ☁️
-            "cerah" -> "\u2600\uFE0F"          // ☀️
-            else -> "\u2753"                    // ❓
-        }
+        binding.tvCuacaIcon.setImageResource(when (cuaca.lowercase()) {
+            "hujan" -> com.smarthome.iot.R.drawable.ic_rain
+            "mendung" -> com.smarthome.iot.R.drawable.ic_cloud
+            "cerah" -> com.smarthome.iot.R.drawable.ic_sun
+            else -> com.smarthome.iot.R.drawable.ic_question
+        })
 
         val isOnline = item.statusDevice.equals("online", ignoreCase = true)
         binding.tvDeviceStatus.text = if (isOnline) "Online" else "Offline"
