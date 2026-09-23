@@ -104,8 +104,6 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length) {
 }
 
 void connectMqtt() {
-  int failCount = 0;
-
   while (!mqttClient.connected()) {
     Serial.print("Menghubungkan ke HiveMQ...");
 
@@ -116,9 +114,7 @@ void connectMqtt() {
       mqttClient.subscribe(mqttTopic);
       Serial.print("Subscribe ke: ");
       Serial.println(mqttTopic);
-      failCount = 0;
     } else {
-      failCount++;
       Serial.print("Gagal, rc=");
       Serial.print(mqttClient.state());
       Serial.println(" -> coba lagi 2 detik lagi");
@@ -126,17 +122,6 @@ void connectMqtt() {
       delay(100);
       digitalWrite(led, HIGH);
       delay(1900);
-
-      // WiFi.status() kadang telat/salah lapor "masih connected" walau WiFi beneran putus
-      // (terutama kalau router-nya yang mati, bukan ESP-nya). Kalau MQTT gagal terus,
-      // anggap WiFi memang putus, paksa reconnect (ini yang bikin LED kedip lagi).
-      if (failCount >= 3) {
-        Serial.println("Gagal terus -- paksa WiFi reconnect...");
-        WiFi.disconnect();
-        delay(200);
-        connectWiFi(); // blocking, LED kedip sampai WiFi beneran nyambung lagi
-        failCount = 0;
-      }
     }
   }
 }
@@ -161,7 +146,7 @@ void sendHeartbeat() {
   HTTPClient http;
   http.begin(client, HEARTBEAT_URL);
   http.addHeader("Content-Type", "application/json");
-  http.setTimeout(10000); // dilonggarkan -- MQTT sekarang toleran (keepalive 60s), jadi aman dikasih waktu lebih
+  http.setTimeout(3000); // dipersingkat -- biar tidak lama-lama menahan/memblokir loop MQTT
 
   // Suhu dummy, rentang 25.0 - 35.0 derajat (satu angka di belakang koma)
   float suhu1 = random(250, 350) / 10.0;

@@ -59,7 +59,9 @@ async function publishUpdate(device, payload) {
 
     client.on('connect', () => {
       const topic = `smarthome/${device}/status`;
-      client.publish(topic, JSON.stringify(payload), { qos: 1 }, () => finish());
+      // retain: true -- broker simpan pesan ini, dikirim OTOMATIS ke subscriber baru
+      // (termasuk ESP yang baru nyala lagi setelah mati/putus koneksi).
+      client.publish(topic, JSON.stringify(payload), { qos: 1, retain: true }, () => finish());
     });
 
     client.on('error', (err) => {
