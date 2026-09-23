@@ -9,4 +9,5 @@
     <color name="cardBackground">#FFFFFF</color>
     <color name="accentOrange">#FB8C00</color>
     <color name="accentCyan">#079BD3</color>
+	<color name="switchTrackTint">#B0B0B0</color>
 </resources>
