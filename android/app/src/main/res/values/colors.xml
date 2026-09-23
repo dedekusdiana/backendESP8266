@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primaryBlue">#159BD0</color>
+    <color name="darkNavy">#18324D</color>
+    <color name="onColor">#17883B</color>
+    <color name="offColor">#D64545</color>
+    <color name="screenBackground">#F3F7FB</color>
+    <color name="mutedText">#71859A</color>
+    <color name="cardBackground">#FFFFFF</color>
+    <color name="accentOrange">#FB8C00</color>
+    <color name="accentCyan">#079BD3</color>
+	<color name="switchTrackTint">#80CBC4</color>
+</resources>
