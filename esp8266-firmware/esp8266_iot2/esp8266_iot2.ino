@@ -189,6 +189,8 @@ void sendHeartbeat() {
   }
 
   http.end();
+  client.stop();
+  delay(200); // kasih waktu stack WiFi/TLS "napas" sebelum lanjut proses MQTT
 }
 
 void setup() {

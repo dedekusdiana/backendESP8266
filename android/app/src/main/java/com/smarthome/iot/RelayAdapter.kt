@@ -14,10 +14,12 @@ class RelayAdapter(
 
     private var currentDevice: String = ""
     private var currentItem: DeviceStatusItem? = null
+    private var deviceOnline: Boolean = true
 
-    fun submitStatus(device: String, item: DeviceStatusItem) {
+    fun submitStatus(device: String, item: DeviceStatusItem, isDeviceOnline: Boolean) {
         currentDevice = device
         currentItem = item
+        deviceOnline = isDeviceOnline
         notifyItemRangeChanged(0, RELAY_FIELDS.size)
     }
 
@@ -35,7 +37,7 @@ class RelayAdapter(
         val field = RELAY_FIELDS[position]
         val value = currentItem?.valueFor(field.jsonKey) ?: "OFF"
         val label = labelPrefs.getLabel(currentDevice, field.jsonKey, field.label)
-        holder.bind(field, label, value)
+        holder.bind(field, label, value, deviceOnline)
     }
 
     override fun getItemCount(): Int = RELAY_FIELDS.size
@@ -46,7 +48,7 @@ class RelayAdapter(
         private val onEditLabel: (jsonKey: String, currentLabel: String) -> Unit
     ) : RecyclerView.ViewHolder(binding.root) {
 
-        fun bind(field: RelayField, label: String, value: String) {
+        fun bind(field: RelayField, label: String, value: String, deviceOnline: Boolean) {
             binding.tvRelayLabel.text = label
 
             val isOn = value.equals("ON", ignoreCase = true)
@@ -57,9 +59,13 @@ class RelayAdapter(
             // Lepas listener dulu sebelum set programatik, supaya tidak memicu onToggle.
             binding.switchRelay.setOnCheckedChangeListener(null)
             binding.switchRelay.isChecked = isOn
+            binding.switchRelay.isEnabled = deviceOnline
             binding.switchRelay.setOnCheckedChangeListener { _, checked ->
                 onToggle(field.jsonKey, if (checked) "ON" else "OFF")
             }
+
+            // Redupkan tampilan baris kalau device offline, biar kelihatan jelas nonaktif
+            binding.root.alpha = if (deviceOnline) 1.0f else 0.5f
 
             binding.btnEditRelayLabel.setOnClickListener {
                 onEditLabel(field.jsonKey, label)

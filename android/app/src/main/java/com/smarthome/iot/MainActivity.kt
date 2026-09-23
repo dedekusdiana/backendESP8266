@@ -241,6 +241,6 @@ class MainActivity : AppCompatActivity() {
             Color.parseColor(if (isOnline) "#2E7D32" else "#D32F2F")
         )
 
-        relayAdapter.submitStatus(device, item)
+        relayAdapter.submitStatus(device, item, isOnline)
     }
 }
