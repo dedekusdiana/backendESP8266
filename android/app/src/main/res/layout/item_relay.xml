@@ -4,8 +4,8 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginBottom="10dp"
-    app:cardCornerRadius="16dp"
+    android:layout_marginBottom="6dp"
+    app:cardCornerRadius="12dp"
     app:cardElevation="0dp"
     app:strokeWidth="1dp"
     app:strokeColor="#D9E7F2"
@@ -16,16 +16,16 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:padding="12dp">
+        android:padding="8dp">
 
         <FrameLayout
-            android:layout_width="52dp"
-            android:layout_height="52dp"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
             android:background="@drawable/bg_icon_circle">
             <ImageView
                 android:id="@+id/relayIcon"
-                android:layout_width="28dp"
-                android:layout_height="28dp"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
                 android:layout_gravity="center"
                 android:src="@drawable/ic_relay"
                 android:contentDescription="Relay" />
@@ -35,8 +35,8 @@
             android:id="@+id/relayDot"
             android:layout_width="8dp"
             android:layout_height="8dp"
-            android:layout_marginStart="10dp"
-            android:layout_marginEnd="10dp"
+            android:layout_marginStart="7dp"
+            android:layout_marginEnd="7dp"
             android:src="@drawable/bg_online_dot"
             android:contentDescription="Relay status" />
 
@@ -50,7 +50,7 @@
                 android:id="@+id/tvRelayLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="16sp"
+                android:textSize="14sp"
                 android:textStyle="bold"
                 android:textColor="@color/darkNavy"
                 tools:text="Relay 1" />
@@ -58,7 +58,7 @@
                 android:id="@+id/btnEditRelayLabel"
                 android:layout_width="26dp"
                 android:layout_height="26dp"
-                android:layout_marginStart="5dp"
+                android:layout_marginStart="3dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Edit nama relay"
                 android:padding="4dp"
@@ -70,7 +70,7 @@
             android:id="@+id/switchRelay"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:minWidth="74dp"
+            android:minWidth="64dp"
             app:thumbTint="@color/cardBackground"
             app:trackTint="@color/switchTrackTint" />
     </LinearLayout>
