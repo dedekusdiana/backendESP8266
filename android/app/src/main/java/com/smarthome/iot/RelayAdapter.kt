@@ -52,16 +52,15 @@ class RelayAdapter(
             binding.tvRelayLabel.text = label
 
             val isOn = value.equals("ON", ignoreCase = true)
-            binding.relayDot.setColorFilter(
-                Color.parseColor(if (isOn) "#4CAF50" else "#BDBDBD")
-            )
 
-            // Lepas listener dulu sebelum set programatik, supaya tidak memicu onToggle.
-            binding.switchRelay.setOnCheckedChangeListener(null)
-            binding.switchRelay.isChecked = isOn
-            binding.switchRelay.isEnabled = deviceOnline
-            binding.switchRelay.setOnCheckedChangeListener { _, checked ->
-                onToggle(field.jsonKey, if (checked) "ON" else "OFF")
+            binding.btnToggleRelay.text = if (isOn) "ON" else "OFF"
+            binding.btnToggleRelay.backgroundTintList = android.content.res.ColorStateList.valueOf(
+                Color.parseColor(if (isOn) "#1E88E5" else "#B0BEC5")
+            )
+            binding.btnToggleRelay.isEnabled = deviceOnline
+
+            binding.btnToggleRelay.setOnClickListener {
+                onToggle(field.jsonKey, if (isOn) "OFF" else "ON")
             }
 
             // Redupkan tampilan baris kalau device offline, biar kelihatan jelas nonaktif

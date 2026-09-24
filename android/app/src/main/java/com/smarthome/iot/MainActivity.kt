@@ -67,6 +67,7 @@ class MainActivity : AppCompatActivity() {
         binding.deviceSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
                 val device = deviceNames.getOrNull(position) ?: return
+                binding.tvSelectedDeviceName.text = device
                 if (device != selectedDevice) {
                     selectedDevice = device
                     refreshSuhuTitles()
@@ -129,11 +130,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setDatabaseStatus(connected: Boolean, detail: String? = null) {
-        binding.tvDatabaseStatus.text = if (connected) "Connected" else "Terputus"
+        binding.tvDatabaseStatus.text = "\u25CF " + if (connected) "Connected" else "Terputus"
         binding.tvDatabaseStatus.setTextColor(
             Color.parseColor(if (connected) "#2E7D32" else "#D32F2F")
         )
         if (detail != null) binding.tvConnectionInfo.text = detail
+    }
+
+    /** Pisahkan teks gabungan "26.2C, 70%RH" -> Pair("26.2°C", "70%RH"). */
+    private fun parseSuhuText(raw: String): Pair<String, String> {
+        val parts = raw.split(",").map { it.trim() }
+        val tempPart = parts.getOrNull(0) ?: "--"
+        val humidPart = parts.getOrNull(1) ?: "--"
+        val tempFormatted = if (tempPart.endsWith("C", ignoreCase = true) && !tempPart.contains("\u00B0")) {
+            tempPart.dropLast(1) + "\u00B0C"
+        } else tempPart
+        return tempFormatted to humidPart
     }
 
     private fun loadDeviceListThenStatus() {
@@ -164,6 +176,7 @@ class MainActivity : AppCompatActivity() {
 
                     val keepIndex = deviceNames.indexOf(selectedDevice).let { if (it >= 0) it else 0 }
                     selectedDevice = deviceNames[keepIndex]
+                    binding.tvSelectedDeviceName.text = selectedDevice
                     binding.deviceSpinner.setSelection(keepIndex)
                     refreshSuhuTitles()
 
@@ -231,21 +244,27 @@ class MainActivity : AppCompatActivity() {
 
         binding.tvLastUpdate.text = "Update terakhir: ${TimeUtils.toJakartaTime(item.time)}"
 
-        binding.cardSuhu1.tvSuhuValue.text = item.valueForSuhu("suhu")
-        binding.cardSuhu2.tvSuhuValue.text = item.valueForSuhu("suhu2")
-        binding.cardSuhu3.tvSuhuValue.text = item.valueForSuhu("suhu3")
+        val (t1, h1) = parseSuhuText(item.valueForSuhu("suhu"))
+        val (t2, h2) = parseSuhuText(item.valueForSuhu("suhu2"))
+        val (t3, h3) = parseSuhuText(item.valueForSuhu("suhu3"))
+        binding.cardSuhu1.tvSuhuValue.text = t1
+        binding.cardSuhu1.tvKelembabanValue.text = h1
+        binding.cardSuhu2.tvSuhuValue.text = t2
+        binding.cardSuhu2.tvKelembabanValue.text = h2
+        binding.cardSuhu3.tvSuhuValue.text = t3
+        binding.cardSuhu3.tvKelembabanValue.text = h3
 
         val cuaca = item.cuaca ?: "-"
         binding.tvCuacaValue.text = cuaca
-        binding.tvCuacaIcon.setImageResource(when (cuaca.lowercase()) {
-            "hujan" -> com.smarthome.iot.R.drawable.ic_rain
-            "mendung" -> com.smarthome.iot.R.drawable.ic_cloud
-            "cerah" -> com.smarthome.iot.R.drawable.ic_sun
-            else -> com.smarthome.iot.R.drawable.ic_question
-        })
+        binding.tvCuacaIcon.text = when (cuaca.lowercase()) {
+            "hujan" -> "\uD83C\uDF27\uFE0F"   // 🌧️
+            "mendung" -> "\u2601\uFE0F"        // ☁️
+            "cerah" -> "\u2600\uFE0F"          // ☀️
+            else -> "\u2753"                    // ❓
+        }
 
         val isOnline = item.statusDevice.equals("online", ignoreCase = true)
-        binding.tvDeviceStatus.text = if (isOnline) "Online" else "Offline"
+        binding.tvDeviceStatus.text = "\u25CF " + if (isOnline) "Online" else "Offline"
         binding.tvDeviceStatus.setTextColor(
             Color.parseColor(if (isOnline) "#2E7D32" else "#D32F2F")
         )

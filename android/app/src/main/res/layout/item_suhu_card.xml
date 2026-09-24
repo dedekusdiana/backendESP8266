@@ -1,67 +1,107 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:minHeight="148dp"
-    android:background="@drawable/bg_sensor_card">
+    app:cardCornerRadius="14dp"
+    app:cardElevation="0dp"
+    app:strokeWidth="1dp"
+    app:strokeColor="@color/dividerLine"
+    app:cardBackgroundColor="@color/cardBackground">
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:paddingStart="9dp"
-        android:paddingEnd="7dp"
-        android:paddingTop="10dp"
-        android:paddingBottom="8dp">
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
 
-        <FrameLayout
-            android:layout_width="38dp"
-            android:layout_height="38dp"
-            android:background="@drawable/bg_icon_circle">
-            <ImageView
-                android:layout_width="22dp"
-                android:layout_height="22dp"
-                android:layout_gravity="center"
-                android:src="@drawable/ic_temperature"
-                android:contentDescription="Temperature" />
-        </FrameLayout>
+        <!-- Aksen garis biru di kiri -->
+        <View
+            android:layout_width="4dp"
+            android:layout_height="match_parent"
+            android:background="@color/iconCircleBlue" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:layout_marginTop="6dp">
+            android:orientation="vertical"
+            android:padding="12dp">
+
+            <TextView
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:background="@drawable/bg_icon_circle"
+                android:backgroundTint="#DCEBFB"
+                android:gravity="center"
+                android:text="\uD83C\uDF21\uFE0F"
+                android:textSize="14sp" />
+
             <TextView
                 android:id="@+id/tvSuhuTitle"
-                android:layout_width="0dp"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Suhu 1"
-                android:textSize="11sp"
-                android:textColor="@color/darkNavy"
+                android:layout_marginTop="8dp"
+                android:text="Suhu"
+                android:textSize="12sp"
+                android:textColor="@color/mutedText"
                 android:maxLines="1" />
-            <ImageButton
-                android:id="@+id/btnEditSuhuTitle"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="Edit nama sensor"
-                android:padding="4dp"
-                android:src="@android:drawable/ic_menu_edit"
-                app:tint="#9BAAB7" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/tvSuhuValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="--\u00B0C"
+                    android:textSize="19sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/iconCircleBlue" />
+
+                <ImageButton
+                    android:id="@+id/btnEditSuhuTitle"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_marginStart="4dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Edit nama sensor"
+                    android:padding="3dp"
+                    android:src="@android:drawable/ic_menu_edit"
+                    app:tint="@color/mutedText" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="4dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="\uD83D\uDCA7"
+                    android:textSize="12sp"
+                    android:layout_marginEnd="3dp" />
+
+                <TextView
+                    android:id="@+id/tvKelembabanValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="--%RH"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/darkNavy" />
+
+            </LinearLayout>
+
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/tvSuhuValue"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="3dp"
-            android:text="--"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:textColor="@color/accentCyan"
-            android:maxLines="2" />
     </LinearLayout>
-</FrameLayout>
+
+</com.google.android.material.card.MaterialCardView>
