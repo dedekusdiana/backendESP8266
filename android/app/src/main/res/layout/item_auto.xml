@@ -5,7 +5,7 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginHorizontal="16dp"
-    android:layout_marginVertical="5dp"
+    android:layout_marginVertical="2dp"
     app:cardCornerRadius="14dp"
     app:cardElevation="0dp"
     app:strokeWidth="1dp"
@@ -16,7 +16,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="14dp">
+        android:padding="8dp">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -24,15 +24,17 @@
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
+            <!-- Ikon lampu: kuning saat nyala, abu-abu saat mati -->
             <TextView
-                android:layout_width="38dp"
-                android:layout_height="38dp"
-                android:layout_marginEnd="12dp"
+                android:id="@+id/tvAutoIcon"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_marginEnd="10dp"
                 android:background="@drawable/bg_icon_circle"
-                android:backgroundTint="#FFF1DC"
+                android:backgroundTint="#ECEFF1"
                 android:gravity="center"
-                android:text="\u23F0"
-                android:textSize="16sp" />
+                android:text="\uD83D\uDCA1"
+                android:textSize="15sp" />
 
             <LinearLayout
                 android:layout_width="0dp"
@@ -44,18 +46,35 @@
                     android:id="@+id/tvAutoTitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textSize="16sp"
+                    android:textSize="15sp"
                     android:textStyle="bold"
                     android:textColor="@color/darkNavy"
-                    tools:text="Lampu Teras" />
+                    tools:text="Auto 1" />
 
-                <TextView
-                    android:id="@+id/tvAutoSummary"
+                <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textSize="12sp"
-                    android:textColor="@color/mutedText"
-                    tools:text="Auto 1 \u2022 Setiap hari" />
+                    android:orientation="horizontal">
+
+                    <!-- Indikator: ● Menyala (hijau) / ● Mati (abu-abu) -->
+                    <TextView
+                        android:id="@+id/tvAutoLamp"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        tools:text="● Menyala"
+                        tools:textColor="#2E7D32" />
+
+                    <TextView
+                        android:id="@+id/tvAutoSummary"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:textSize="12sp"
+                        android:textColor="@color/mutedText"
+                        tools:text="• Jadwal aktif" />
+                </LinearLayout>
             </LinearLayout>
 
             <com.google.android.material.switchmaterial.SwitchMaterial
@@ -67,28 +86,34 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="6dp"
             android:orientation="horizontal">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnAutoOn"
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="36dp"
                 android:layout_weight="1"
-                android:layout_marginEnd="6dp"
+                android:layout_marginEnd="4dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
                 android:textAllCaps="false"
-                tools:text="Nyala 18:00" />
+                android:textSize="12sp"
+                tools:text="Nyala  18:00" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnAutoOff"
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="36dp"
                 android:layout_weight="1"
-                android:layout_marginStart="6dp"
+                android:layout_marginStart="4dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
                 android:textAllCaps="false"
-                tools:text="Mati 06:00" />
+                android:textSize="12sp"
+                tools:text="Mati  06:00" />
         </LinearLayout>
     </LinearLayout>
 

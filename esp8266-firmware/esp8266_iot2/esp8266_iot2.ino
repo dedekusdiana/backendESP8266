@@ -35,8 +35,8 @@
 #include <ArduinoJson.h>
 
 // ------------------- GANTI SESUAI KEBUTUHANMU -------------------
-const char* WIFI_SSID     = "IOT";
-const char* WIFI_PASSWORD = "rayyanazka";
+const char* WIFI_SSID     = "OFFICE_LT2";
+const char* WIFI_PASSWORD = "4rm_Adm!n";
 
 // Backend Vercel (dipakai buat heartbeat status online)
 const char* HEARTBEAT_URL = "https://backend-esp-8266.vercel.app/api/heartbeat";

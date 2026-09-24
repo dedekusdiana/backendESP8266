@@ -52,11 +52,9 @@ class MainActivity : AppCompatActivity() {
             onEditLabel = { jsonKey, currentLabel -> showRenameDialog(currentLabel) { newLabel ->
                 selectedDevice?.let { labelPrefs.setLabel(it, jsonKey, newLabel) }
                 relayAdapter.refreshLabels()
-                autoAdapter.refreshLabels()
             } }
         )
         autoAdapter = AutoAdapter(
-            labelPrefs = labelPrefs,
             onChange = { jsonKey, newRaw -> updateField(jsonKey, newRaw) }
         )
         binding.autoRecyclerView.layoutManager = LinearLayoutManager(this)
@@ -279,6 +277,6 @@ class MainActivity : AppCompatActivity() {
         )
 
         relayAdapter.submitStatus(device, item, isOnline)
-        autoAdapter.submitStatus(device, item)
+        autoAdapter.submitStatus(item)
     }
 }

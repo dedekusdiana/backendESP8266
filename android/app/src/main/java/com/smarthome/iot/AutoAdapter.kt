@@ -1,6 +1,8 @@
 package com.smarthome.iot
 
 import android.app.TimePickerDialog
+import android.content.res.ColorStateList
+import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
@@ -8,21 +10,13 @@ import com.smarthome.iot.databinding.ItemAutoBinding
 
 /** Daftar kartu jadwal otomatis (Auto 1, Auto 2) yang tampil di atas Kontrol Relay. */
 class AutoAdapter(
-    private val labelPrefs: LabelPrefs,
     private val onChange: (jsonKey: String, newRaw: String) -> Unit
 ) : RecyclerView.Adapter<AutoAdapter.AutoViewHolder>() {
 
-    private var currentDevice: String = ""
     private var currentItem: DeviceStatusItem? = null
 
-    fun submitStatus(device: String, item: DeviceStatusItem) {
-        currentDevice = device
+    fun submitStatus(item: DeviceStatusItem) {
         currentItem = item
-        notifyItemRangeChanged(0, AUTO_FIELDS.size)
-    }
-
-    /** Dipanggil setelah user rename relay, supaya judul kartu auto ikut berubah. */
-    fun refreshLabels() {
         notifyItemRangeChanged(0, AUTO_FIELDS.size)
     }
 
@@ -34,9 +28,9 @@ class AutoAdapter(
     override fun onBindViewHolder(holder: AutoViewHolder, position: Int) {
         val field = AUTO_FIELDS[position]
         val schedule = AutoSchedule.parse(currentItem?.valueForAuto(field.jsonKey))
-        val relayDefault = RELAY_FIELDS.firstOrNull { it.jsonKey == field.relayKey }?.label ?: field.relayKey
-        val relayLabel = labelPrefs.getLabel(currentDevice, field.relayKey, relayDefault)
-        holder.bind(field, relayLabel, schedule)
+        // Status lampu = status relay yang dikendalikan auto ini (Auto 1 -> Relay 1, Auto 2 -> Relay 2)
+        val lampOn = currentItem?.valueFor(field.relayKey).equals("ON", ignoreCase = true)
+        holder.bind(field, schedule, lampOn)
     }
 
     override fun getItemCount(): Int = AUTO_FIELDS.size
@@ -46,10 +40,17 @@ class AutoAdapter(
         private val onChange: (jsonKey: String, newRaw: String) -> Unit
     ) : RecyclerView.ViewHolder(binding.root) {
 
-        fun bind(field: AutoField, relayLabel: String, schedule: AutoSchedule) {
-            binding.tvAutoTitle.text = relayLabel
-            binding.tvAutoSummary.text = "${field.label} \u2022 " +
-                if (schedule.enabled) "Aktif, setiap hari" else "Nonaktif"
+        fun bind(field: AutoField, schedule: AutoSchedule, lampOn: Boolean) {
+            binding.tvAutoTitle.text = field.label
+
+            // Indikator lampu
+            binding.tvAutoLamp.text = if (lampOn) "\u25CF Menyala" else "\u25CF Mati"
+            binding.tvAutoLamp.setTextColor(Color.parseColor(if (lampOn) "#2E7D32" else "#90A4AE"))
+            binding.tvAutoIcon.backgroundTintList =
+                ColorStateList.valueOf(Color.parseColor(if (lampOn) "#FFE082" else "#ECEFF1"))
+            binding.tvAutoIcon.alpha = if (lampOn) 1.0f else 0.6f
+
+            binding.tvAutoSummary.text = if (schedule.enabled) "\u2022 Jadwal aktif" else "\u2022 Jadwal nonaktif"
 
             binding.btnAutoOn.text = "Nyala  ${schedule.onTime}"
             binding.btnAutoOff.text = "Mati  ${schedule.offTime}"
