@@ -25,7 +25,7 @@ Tabel `iot2` — **1 baris per device** (di-update terus, bukan nambah baris bar
 | kolom                          | keterangan                                  |
 |---------------------------------|----------------------------------------------|
 | `id`                            | auto increment                                |
-| `device`                        | nama/ID alat ESP8266 (UNIK — 1 baris per device) |
+| `device`                        | nama/ID alat ESP8266, otomatis dari Chip ID mis. `ESP-A1B2C3` (UNIK — 1 baris per device) |
 | `status`..`status5`             | status 5 relay/lampu berbeda: "ON" / "OFF"    |
 | `suhu`, `suhu2`, `suhu3`        | 3 sensor suhu+kelembaban (teks gabungan, mis. "28.5C, 65%RH") |
 | `auto1`, `auto2`                | jadwal lampu otomatis, format `"ON,18:00,06:00"` (aktif/nonaktif, jam nyala, jam mati — WIB) |
@@ -36,8 +36,9 @@ Tabel `iot2` — **1 baris per device** (di-update terus, bukan nambah baris bar
 ## Fitur AUTO (jadwal nyala/mati lampu)
 
 Menu **AUTO** di app (di atas Kontrol Relay) mengatur jadwal otomatis:
-- **Auto 1 → Relay 1** (mis. lampu teras), **Auto 2 → Relay 2** (mis. lampu taman). Judul kartu
-  otomatis mengikuti nama relay yang sudah kamu edit.
+- **Auto 1 → Relay 1** (mis. lampu teras), **Auto 2 → Relay 2** (mis. lampu taman). Kartu diberi
+  judul "Auto 1" / "Auto 2" dan punya indikator lampu: ● Menyala (hijau) / ● Mati (abu-abu),
+  diambil dari status relay yang dikendalikan.
 - Tiap kartu punya switch aktif/nonaktif + tombol **Nyala** dan **Mati** (pilih jam & menit).
   Jadwal boleh melewati tengah malam (mis. nyala 18:00, mati 06:00).
 - Jadwal disimpan di kolom `auto1` / `auto2` (format `"ON,18:00,06:00"`), dikirim ke ESP lewat
@@ -81,6 +82,8 @@ cp .env.example .env
 
 Isi `.env`:
 - `DATABASE_URL` — connection string Neon
+- `DEVICE_CODE_SECRET` — teks acak panjang (min 32 karakter) untuk membuat kode aktivasi device. **Jangan diganti setelah ada alat terjual.**
+- `ADMIN_API_KEY` — kunci admin untuk melihat daftar semua device (opsional; kosong = ditutup)
 - `MQTT_HOST`, `MQTT_PORT`, `MQTT_USERNAME`, `MQTT_PASSWORD` — dari HiveMQ Cloud
   (tab "Overview" untuk host/port, tab "Access Management" untuk username/password)
 
@@ -95,19 +98,23 @@ DATABASE_URL saja → Deploy). Setelah dapat URL-nya (mis. `https://esp8266-iot2
 itu dipakai di app Android (`RetrofitClient.kt`).
 
 ### Endpoint yang tersedia
-- `POST /api/data` — kirim `{"device":"...", ...field yang mau diubah}`. Bisa kirim
-  cuma sebagian field (misal `{"device":"ESP01_01","status3":"ON"}`) — field lain
-  otomatis dipertahankan dari data terakhir device itu. Setelah tersimpan, backend
-  otomatis publish ke MQTT topic `smarthome/<device>/status`. **Tidak memengaruhi**
-  status online/offline device.
+
+Akses per device memakai **kode aktivasi** (header `X-Device-Code`). Lihat bagian "Multi pelanggan" di bawah.
+
+- `POST /api/claim` — `{"device":"ESP-A1B2C3","code":"ABCDE-FGHJK"}`, dipakai app saat pelanggan
+  menambahkan device. Kode salah → 403.
+- `POST /api/data` 🔒 — kirim `{"device":"...", ...field yang mau diubah}` (relay `status`..`status5`,
+  jadwal `auto1`/`auto2`). Bisa sebagian field saja. Setelah tersimpan, backend publish ke MQTT
+  topic `smarthome/<device>/status`. Butuh header `X-Device-Code`.
+- `GET /api/status/:device` 🔒 — baris terakhir satu device (semua kolom + `status_device`).
+- `GET /api/data/:device?limit=50` 🔒 — data terbaru satu device.
 - `POST /api/heartbeat` — KHUSUS dipanggil ESP8266 tiap 15 detik, body
-  `{"device":"...", "suhu":"..", "suhu2":"..", "suhu3":".."}`. Suhu di sini opsional
-  (kalau tidak dikirim, nilai lama dipertahankan). Field ini cuma nyentuh kolom suhu
-  & `last_heartbeat`, dipakai buat hitung `status_device` — TIDAK memengaruhi relay.
-- `GET /api/data?limit=50` — data terbaru semua device (semua kolom)
-- `GET /api/data/:device?limit=50` — data terbaru satu device (semua kolom)
-- `GET /api/status` — baris terakhir tiap device (semua kolom)
-- `GET /api/status/:device` — baris terakhir satu device (semua kolom)
+  `{"device":"...", "suhu":"..", "suhu2":"..", "suhu3":"..", "cuaca":".."}`. Boleh juga membawa
+  `status` / `status2` ("ON"/"OFF") untuk melaporkan kondisi relay setelah jadwal auto berjalan.
+  Dipakai buat hitung `status_device` (online/offline). Tanpa kode aktivasi, dan tidak
+  mengembalikan data device.
+- `GET /api/status` dan `GET /api/data` 🔒 (admin) — daftar semua device, butuh header
+  `X-Admin-Key: <ADMIN_API_KEY>`. App Android TIDAK memakai ini.
 
 ## 3. Broker MQTT (HiveMQ Cloud)
 
@@ -124,24 +131,69 @@ itu dipakai di app Android (`RetrofitClient.kt`).
 2. Install board package **ESP8266** (kalau belum): File → Preferences → Additional Board
    Manager URLs → tambahkan `http://arduino.esp8266.com/stable/package_esp8266com_index.json`
    → Tools → Board → Boards Manager → cari "esp8266" → Install.
-3. Install 2 library lewat Library Manager:
+3. Install 3 library lewat Library Manager:
+   - **WiFiManager** (by tzapu)
    - **PubSubClient** (by Nick O'Leary)
    - **ArduinoJson** (by Benoit Blanchon)
 4. Edit di bagian atas file:
-   - `WIFI_SSID` / `WIFI_PASSWORD` → sesuai WiFi kamu (perlu akses internet)
    - `MQTT_HOST`, `MQTT_PORT`, `MQTT_USER`, `MQTT_PASS` → sama seperti yang diisi di
      `.env` backend
-   - `DEVICE_NAME` → harus SAMA PERSIS dengan device yang dipilih di app Android
+   - `HEARTBEAT_URL`, `DATA_URL` → URL backend Vercel
+   - **WiFi tidak diisi di firmware** dan **nama device juga tidak** — keduanya otomatis
+     (lihat bagian "Setup WiFi & nama device" di bawah).
 5. Pilih board yang sesuai (Tools → Board → mis. "Generic ESP8266 Module").
 6. Klik Upload.
-7. Buka Serial Monitor (baud rate 115200) — harus muncul "WiFi terhubung" lalu
-   "Terhubung" (ke HiveMQ) dan "Subscribe ke: smarthome/ESP01_01/status".
+7. Buka Serial Monitor (baud rate 115200) — akan muncul `Device: ESP-XXXXXX`. Setelah WiFi
+   diatur, muncul "WiFi terhubung" lalu "Terhubung" (ke HiveMQ) dan "Subscribe ke:
+   smarthome/ESP-XXXXXX/status".
+
+### Setup WiFi & nama device (untuk produk yang dijual)
+
+- **Nama device** dibuat otomatis dari Chip ID ESP8266, contoh `ESP-A1B2C3` — unik untuk tiap alat,
+  tidak perlu diedit per unit. Device baru otomatis muncul di app begitu heartbeat pertamanya masuk.
+  Catat/cetak nama ini di stiker produk (sama dengan nama WiFi setup di bawah).
+- **Setup WiFi pertama kali** (captive portal):
+  1. Nyalakan alat. Karena belum ada WiFi tersimpan, alat membuat WiFi bernama
+     `SmartHome-A1B2C3` (terbuka, tanpa password, kecuali `AP_PASSWORD` diisi di firmware).
+  2. Sambungkan HP ke WiFi itu — halaman setup terbuka otomatis (kalau tidak, buka `192.168.4.1`).
+  3. Pilih WiFi rumah, isi password, Save. Alat menyimpan WiFi di flash dan tersambung sendiri.
+- **Ganti WiFi / router baru:** kalau WiFi tersimpan gagal tersambung lebih dari 2 menit, alat
+  otomatis membuka portal `SmartHome-XXXXXX` lagi (tertutup sendiri setelah 3 menit, lalu
+  mencoba lagi). Jadi cukup matikan WiFi lama, tunggu sebentar, lalu setup ulang.
+- **Testing di alat sendiri:** WiFi lama masih tersimpan di flash, jadi portal tidak muncul. Set
+  `RESET_WIFI_ON_BOOT = true`, upload, biarkan sekali boot, lalu kembalikan ke `false` dan upload lagi.
+- Alat lama yang memakai nama `ESP01_01` akan muncul sebagai device terpisah di app (baris lamanya
+  tetap ada di database, bisa dihapus lewat Neon).
 
 ## 5. Cek data masuk
 
-Buka `https://<url-vercel-kamu>/api/data` di browser — harus muncul data terbaru.
-Tekan tombol ON/OFF di app Android, LED ESP8266 harus langsung berubah dalam
-waktu singkat (bukan nunggu 3 detik lagi).
+Setelah alat menyala dan WiFi diatur, cek lewat admin (ganti URL & kunci):
+
+```bash
+curl -H "X-Admin-Key: <ADMIN_API_KEY>" https://<url-vercel-kamu>/api/status
+```
+
+Device `ESP-XXXXXX` harus muncul. Lalu di app Android: tombol **+** → isi ID & kode aktivasi
+(dari stiker) → device muncul. Tekan ON/OFF, relay harus langsung berubah.
+
+## Multi pelanggan (tiap orang hanya melihat device miliknya)
+
+- Server **tidak pernah** memberi daftar semua device ke app. App hanya menampilkan device yang
+  ditambahkan pelanggan sendiri lewat tombol **+** (ID device + kode aktivasi dari stiker).
+  Daftar itu disimpan di HP; tombol tempat sampah menghapus device dari app (alatnya tetap jalan).
+- **Kode aktivasi** dibuat dari nama device + `DEVICE_CODE_SECRET` (HMAC), tidak disimpan di
+  database. Setiap alat punya kode berbeda, dan tanpa kode yang benar server menolak baca/kontrol (403).
+- **Membuat stiker** — saat flashing tiap alat, catat `Device: ESP-XXXXXX` dari Serial Monitor, lalu:
+
+  ```bash
+  cd backend
+  npm install
+  npm run code -- ESP-A1B2C3 ESP-D4E5F6
+  # ID: ESP-A1B2C3    Kode: AL5UH-F89JE
+  ```
+
+  (butuh `backend/.env` berisi `DEVICE_CODE_SECRET` yang SAMA dengan di Vercel). Cetak ID + kode di
+  stiker/kemasan. Beberapa HP boleh menambahkan device yang sama (mis. keluarga) selama punya kodenya.
 
 ## 5. App Android "Smart Home IoT"
 
@@ -152,7 +204,7 @@ App Android di folder `android/` punya:
   `status_device` di response API): kalau lebih dari 35 detik tanpa heartbeat, otomatis
   "Offline". Dibaca lewat REST API biasa, sama seperti suhu & relay -- app tidak perlu
   simpan kredensial broker MQTT sama sekali.
-- Combo box pilih device
+- Combo box pilih device (hanya device yang sudah ditambahkan lewat tombol **+**; tombol tempat sampah = hapus dari app)
 - 3 kartu suhu (suhu, suhu2, suhu3) — judul bisa di-edit (ikon pensil)
 - 5 baris relay dengan Switch ON/OFF — nama relay juga bisa di-edit
 - Auto-refresh data (suhu, status relay, status device) tiap 5 detik lewat REST API

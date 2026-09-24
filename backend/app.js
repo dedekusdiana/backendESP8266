@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
 const mqtt = require('mqtt');
+const { codeMatches, requireDeviceCode, requireAdmin } = require('./auth');
 
 const app = express();
 app.use(cors());
@@ -98,7 +99,7 @@ app.get('/', (req, res) => {
 // (jadi app Android bisa update 1 relay saja tanpa perlu tahu status relay lain).
 // Field yang belum pernah ada sama sekali -> default 'OFF' (status) / '0' (suhu).
 // ---------------------------------------------------------------
-app.post('/api/data', async (req, res) => {
+app.post('/api/data', requireDeviceCode, async (req, res) => {
   try {
     const { device } = req.body;
     if (!device) {
@@ -175,15 +176,21 @@ app.post('/api/data', async (req, res) => {
 // ---------------------------------------------------------------
 app.post('/api/heartbeat', async (req, res) => {
   try {
-    const { device, suhu, suhu2, suhu3, cuaca } = req.body;
+    const { device, suhu, suhu2, suhu3, cuaca, status, status2 } = req.body;
     if (!device) {
       return res.status(400).json({ error: 'Field "device" wajib diisi' });
     }
 
+    // status / status2 opsional: dipakai ESP melapor kondisi relay setelah jadwal auto berjalan
+    // (tidak lewat /api/data lagi, karena /api/data sekarang butuh kode aktivasi milik pelanggan).
+    const onOff = (v) => (v === 'ON' || v === 'OFF' ? v : null);
+
     const result = await pool.query(
-      `INSERT INTO iot2 (device, suhu, suhu2, suhu3, cuaca, last_heartbeat)
-       VALUES ($1, $2, $3, $4, $5, NOW())
+      `INSERT INTO iot2 (device, status, status2, suhu, suhu2, suhu3, cuaca, last_heartbeat)
+       VALUES ($1, COALESCE($2::varchar, 'OFF'), COALESCE($3::varchar, 'OFF'), $4, $5, $6, $7, NOW())
        ON CONFLICT (device) DO UPDATE SET
+         status  = COALESCE($2::varchar, iot2.status),
+         status2 = COALESCE($3::varchar, iot2.status2),
          suhu = COALESCE(EXCLUDED.suhu, iot2.suhu),
          suhu2 = COALESCE(EXCLUDED.suhu2, iot2.suhu2),
          suhu3 = COALESCE(EXCLUDED.suhu3, iot2.suhu3),
@@ -192,6 +199,8 @@ app.post('/api/heartbeat', async (req, res) => {
        RETURNING *`,
       [
         device,
+        onOff(status),
+        onOff(status2),
         suhu !== undefined ? String(suhu) : null,
         suhu2 !== undefined ? String(suhu2) : null,
         suhu3 !== undefined ? String(suhu3) : null,
@@ -199,15 +208,38 @@ app.post('/api/heartbeat', async (req, res) => {
       ]
     );
 
-    res.json({ success: true, data: withDeviceStatus(result.rows[0]) });
+    // Tidak mengembalikan data device ke pemanggil (endpoint ini tanpa kode aktivasi)
+    res.json({ success: true, status_device: withDeviceStatus(result.rows[0]).status_device });
   } catch (err) {
     console.error('Error in POST /api/heartbeat:', err);
     res.status(500).json({ error: 'Gagal menyimpan heartbeat' });
   }
 });
 
+// ---------------------------------------------------------------
+// POST /api/claim  -- app "menambahkan" device milik pelanggan.
+// Body: { "device": "ESP-A1B2C3", "code": "ABCDE-FGHJK" } (kode dari stiker produk)
+// Kode salah -> 403. Kode benar -> 200 (data = null kalau device belum pernah online).
+// ---------------------------------------------------------------
+app.post('/api/claim', async (req, res) => {
+  try {
+    const { device, code } = req.body;
+    if (!device || !code) {
+      return res.status(400).json({ error: 'Field "device" dan "code" wajib diisi' });
+    }
+    if (!codeMatches(device, code)) {
+      return res.status(403).json({ error: 'ID device atau kode aktivasi salah' });
+    }
+    const { rows } = await pool.query(`SELECT * FROM iot2 WHERE device = $1 LIMIT 1`, [device]);
+    res.json({ success: true, data: rows[0] ? withDeviceStatus(rows[0]) : null });
+  } catch (err) {
+    console.error('Error in POST /api/claim:', err);
+    res.status(500).json({ error: 'Gagal memverifikasi device' });
+  }
+});
+
 // GET /api/data?limit=50 -> data terbaru dari semua device
-app.get('/api/data', async (req, res) => {
+app.get('/api/data', requireAdmin, async (req, res) => {
   try {
     const limit = Math.min(Number(req.query.limit) || 50, 500);
     const { rows } = await pool.query(
@@ -222,7 +254,7 @@ app.get('/api/data', async (req, res) => {
 });
 
 // GET /api/data/:device?limit=50 -> data terbaru untuk satu device
-app.get('/api/data/:device', async (req, res) => {
+app.get('/api/data/:device', requireDeviceCode, async (req, res) => {
   try {
     const { device } = req.params;
     const limit = Math.min(Number(req.query.limit) || 50, 500);
@@ -238,7 +270,7 @@ app.get('/api/data/:device', async (req, res) => {
 });
 
 // GET /api/status -> baris terakhir untuk setiap device (semua kolom)
-app.get('/api/status', async (req, res) => {
+app.get('/api/status', requireAdmin, async (req, res) => {
   try {
     const query = `
       SELECT DISTINCT ON (device) *
@@ -254,7 +286,7 @@ app.get('/api/status', async (req, res) => {
 });
 
 // GET /api/status/:device -> baris terakhir untuk SATU device (semua kolom)
-app.get('/api/status/:device', async (req, res) => {
+app.get('/api/status/:device', requireDeviceCode, async (req, res) => {
   try {
     const { device } = req.params;
     const { rows } = await pool.query(

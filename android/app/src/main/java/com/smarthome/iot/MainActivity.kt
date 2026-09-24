@@ -9,6 +9,7 @@ import android.text.InputType
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -21,6 +22,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var labelPrefs: LabelPrefs
+    private lateinit var deviceStore: DeviceStore
     private val mainScope = CoroutineScope(Dispatchers.Main)
     private val handler = Handler(Looper.getMainLooper())
 
@@ -45,6 +47,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         labelPrefs = LabelPrefs(this)
+        deviceStore = DeviceStore(this)
 
         relayAdapter = RelayAdapter(
             labelPrefs = labelPrefs,
@@ -85,7 +88,12 @@ class MainActivity : AppCompatActivity() {
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
+        binding.btnAddDevice.setOnClickListener { showAddDeviceDialog() }
+        binding.btnRemoveDevice.setOnClickListener { confirmRemoveDevice() }
+
         loadDeviceListThenStatus()
+        // Pertama kali install (belum ada device) -> langsung minta pelanggan menambahkan device
+        if (deviceStore.list().isEmpty()) showAddDeviceDialog()
     }
 
     override fun onResume() {
@@ -155,64 +163,150 @@ class MainActivity : AppCompatActivity() {
         return tempFormatted to humidPart
     }
 
+    /** Daftar device diambil dari HP (device yang sudah ditambahkan pelanggan), bukan dari server. */
     private fun loadDeviceListThenStatus() {
+        deviceNames = deviceStore.list()
+
+        if (deviceNames.isEmpty()) {
+            selectedDevice = null
+            binding.deviceSpinner.adapter = null
+            binding.tvSelectedDeviceName.text = "Belum ada device"
+            binding.relayRecyclerView.alpha = 0.4f
+            binding.autoRecyclerView.alpha = 0.4f
+            binding.progressBar.visibility = android.view.View.GONE
+            binding.swipeRefresh.isRefreshing = false
+            return
+        }
+
+        binding.relayRecyclerView.alpha = 1.0f
+        binding.autoRecyclerView.alpha = 1.0f
+
+        val adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_item,
+            deviceNames
+        )
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        binding.deviceSpinner.adapter = adapter
+
+        val keepIndex = deviceNames.indexOf(selectedDevice).let { if (it >= 0) it else 0 }
+        selectedDevice = deviceNames[keepIndex]
+        binding.tvSelectedDeviceName.text = selectedDevice
+        binding.deviceSpinner.setSelection(keepIndex)
+        refreshSuhuTitles()
+
+        loadStatus(showSpinner = true)
+    }
+
+    private fun showAddDeviceDialog() {
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+        }
+        val flags = InputType.TYPE_CLASS_TEXT or
+            InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS or
+            InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        val inputId = EditText(this).apply {
+            hint = "ID device (mis. ESP-A1B2C3)"
+            inputType = flags
+        }
+        val inputCode = EditText(this).apply {
+            hint = "Kode aktivasi (mis. ABCDE-FGHJK)"
+            inputType = flags
+        }
+        container.addView(inputId)
+        container.addView(inputCode)
+
+        AlertDialog.Builder(this)
+            .setTitle("Tambah device")
+            .setMessage("ID dan kode aktivasi ada di stiker pada produk.")
+            .setView(container)
+            .setPositiveButton("Tambah") { _, _ ->
+                claimDevice(
+                    inputId.text.toString().trim().uppercase(),
+                    inputCode.text.toString().trim().uppercase()
+                )
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun claimDevice(device: String, code: String) {
+        if (device.isEmpty() || code.isEmpty()) {
+            Toast.makeText(this, "ID device dan kode aktivasi wajib diisi", Toast.LENGTH_SHORT).show()
+            return
+        }
         binding.progressBar.visibility = android.view.View.VISIBLE
+
         mainScope.launch {
             try {
-                val response = RetrofitClient.apiService.getAllStatus()
-                if (response.isSuccessful) {
-                    setDatabaseStatus(true, "Terhubung ke server")
-
-                    val devices = response.body()?.devices.orEmpty()
-                    deviceNames = devices.map { it.device }
-
-                    if (deviceNames.isEmpty()) {
-                        Toast.makeText(this@MainActivity, "Belum ada device di database.", Toast.LENGTH_LONG).show()
-                        binding.progressBar.visibility = android.view.View.GONE
-                        binding.swipeRefresh.isRefreshing = false
-                        return@launch
+                val response = RetrofitClient.apiService.claim(mapOf("device" to device, "code" to code))
+                when {
+                    response.isSuccessful -> {
+                        deviceStore.add(device, code)
+                        selectedDevice = device
+                        setDatabaseStatus(true, "Terhubung ke server")
+                        Toast.makeText(this@MainActivity, "Device ditambahkan", Toast.LENGTH_SHORT).show()
+                        loadDeviceListThenStatus()
                     }
-
-                    val adapter = ArrayAdapter(
-                        this@MainActivity,
-                        android.R.layout.simple_spinner_item,
-                        deviceNames
-                    )
-                    adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-                    binding.deviceSpinner.adapter = adapter
-
-                    val keepIndex = deviceNames.indexOf(selectedDevice).let { if (it >= 0) it else 0 }
-                    selectedDevice = deviceNames[keepIndex]
-                    binding.tvSelectedDeviceName.text = selectedDevice
-                    binding.deviceSpinner.setSelection(keepIndex)
-                    refreshSuhuTitles()
-
-                    loadStatus(showSpinner = false)
-                } else {
-                    setDatabaseStatus(false, "Error server (${response.code()})")
-                    binding.progressBar.visibility = android.view.View.GONE
-                    binding.swipeRefresh.isRefreshing = false
+                    response.code() == 403 ->
+                        Toast.makeText(this@MainActivity, "ID device atau kode aktivasi salah", Toast.LENGTH_LONG).show()
+                    else ->
+                        Toast.makeText(this@MainActivity, "Gagal menambahkan (${response.code()})", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
                 setDatabaseStatus(false, "Tidak terhubung ke server")
                 Toast.makeText(this@MainActivity, "Gagal konek: ${e.message}", Toast.LENGTH_SHORT).show()
+            } finally {
                 binding.progressBar.visibility = android.view.View.GONE
-                binding.swipeRefresh.isRefreshing = false
             }
         }
     }
 
+    private fun confirmRemoveDevice() {
+        val device = selectedDevice ?: return
+        AlertDialog.Builder(this)
+            .setTitle("Hapus device dari app?")
+            .setMessage("$device dihapus dari app ini saja. Alatnya tetap jalan, dan bisa ditambahkan lagi dengan kode aktivasi di stiker.")
+            .setPositiveButton("Hapus") { _, _ ->
+                deviceStore.remove(device)
+                selectedDevice = null
+                loadDeviceListThenStatus()
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
     private fun loadStatus(showSpinner: Boolean) {
         val device = selectedDevice ?: return
+        val code = deviceStore.codeOf(device) ?: return
         if (isUpdating) return
         if (showSpinner) binding.progressBar.visibility = android.view.View.VISIBLE
 
         mainScope.launch {
             try {
-                val response = RetrofitClient.apiService.getStatus(device)
-                if (response.isSuccessful) {
-                    setDatabaseStatus(true, "Terhubung ke server")
-                    response.body()?.let { bindStatus(it) }
+                val response = RetrofitClient.apiService.getStatus(device, code)
+                when {
+                    response.isSuccessful -> {
+                        setDatabaseStatus(true, "Terhubung ke server")
+                        response.body()?.let { bindStatus(it) }
+                    }
+                    response.code() == 404 -> {
+                        // Kode benar, tapi alat belum pernah online (belum ada heartbeat masuk)
+                        setDatabaseStatus(true, "Terhubung ke server")
+                        binding.tvDeviceStatus.text = "\u25CF Offline"
+                        binding.tvDeviceStatus.setTextColor(Color.parseColor("#D32F2F"))
+                    }
+                    response.code() == 403 -> {
+                        if (showSpinner) {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Kode aktivasi tidak valid. Hapus device ini lalu tambahkan ulang.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 setDatabaseStatus(false, "Tidak terhubung ke server")
@@ -225,13 +319,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateField(jsonKey: String, newValue: String) {
         val device = selectedDevice ?: return
+        val code = deviceStore.codeOf(device) ?: return
         isUpdating = true
         binding.progressBar.visibility = android.view.View.VISIBLE
 
         mainScope.launch {
             try {
                 val body = mapOf("device" to device, jsonKey to newValue)
-                val response = RetrofitClient.apiService.updateStatus(body)
+                val response = RetrofitClient.apiService.updateStatus(code, body)
                 if (response.isSuccessful) {
                     response.body()?.data?.let { bindStatus(it) }
                 } else {

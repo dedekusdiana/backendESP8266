@@ -24,6 +24,12 @@ data class StatusListResponse(
     @SerializedName("devices") val devices: List<DeviceStatusItem>
 )
 
+/** Hasil POST /api/claim. data = null kalau device belum pernah online (kode tetap valid). */
+data class ClaimResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("data") val data: DeviceStatusItem?
+)
+
 data class UpdateStatusResponse(
     @SerializedName("success") val success: Boolean,
     @SerializedName("data") val data: DeviceStatusItem?

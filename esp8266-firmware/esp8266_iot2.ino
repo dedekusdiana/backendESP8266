@@ -66,7 +66,7 @@ const char* HEARTBEAT_URL = "https://backend-esp-8266.vercel.app/api/heartbeat";
 const char* MQTT_HOST = "99a913d804834091bc755acbd559d13f.s1.eu.hivemq.cloud";
 const int   MQTT_PORT = 8883;
 const char* MQTT_USER = "dede_smarthome";
-const char* MQTT_PASS = "rayyanazka";
+const char* MQTT_PASS = "ISI_PASSWORD_HIVEMQ_KAMU";
 
 // Interval heartbeat (ms). Backend anggap OFFLINE kalau lebih dari 35 detik
 // tanpa heartbeat, jadi jangan naikkan ini terlalu tinggi (mis. di atas 30 detik).
