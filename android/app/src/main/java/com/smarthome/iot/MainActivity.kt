@@ -277,6 +277,6 @@ class MainActivity : AppCompatActivity() {
         )
 
         relayAdapter.submitStatus(device, item, isOnline)
-        autoAdapter.submitStatus(item)
+        autoAdapter.submitStatus(item, isOnline)
     }
 }

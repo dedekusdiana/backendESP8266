@@ -14,9 +14,11 @@ class AutoAdapter(
 ) : RecyclerView.Adapter<AutoAdapter.AutoViewHolder>() {
 
     private var currentItem: DeviceStatusItem? = null
+    private var deviceOnline: Boolean = true
 
-    fun submitStatus(item: DeviceStatusItem) {
+    fun submitStatus(item: DeviceStatusItem, isDeviceOnline: Boolean) {
         currentItem = item
+        deviceOnline = isDeviceOnline
         notifyItemRangeChanged(0, AUTO_FIELDS.size)
     }
 
@@ -30,7 +32,7 @@ class AutoAdapter(
         val schedule = AutoSchedule.parse(currentItem?.valueForAuto(field.jsonKey))
         // Status lampu = status relay yang dikendalikan auto ini (Auto 1 -> Relay 1, Auto 2 -> Relay 2)
         val lampOn = currentItem?.valueFor(field.relayKey).equals("ON", ignoreCase = true)
-        holder.bind(field, schedule, lampOn)
+        holder.bind(field, schedule, lampOn, deviceOnline)
     }
 
     override fun getItemCount(): Int = AUTO_FIELDS.size
@@ -40,7 +42,7 @@ class AutoAdapter(
         private val onChange: (jsonKey: String, newRaw: String) -> Unit
     ) : RecyclerView.ViewHolder(binding.root) {
 
-        fun bind(field: AutoField, schedule: AutoSchedule, lampOn: Boolean) {
+        fun bind(field: AutoField, schedule: AutoSchedule, lampOn: Boolean, deviceOnline: Boolean) {
             binding.tvAutoTitle.text = field.label
 
             // Indikator lampu
@@ -61,6 +63,12 @@ class AutoAdapter(
             binding.switchAuto.setOnCheckedChangeListener { _, checked ->
                 onChange(field.jsonKey, schedule.copy(enabled = checked).toRaw())
             }
+
+            // Device offline -> kontrol auto dinonaktifkan & diredupkan, sama seperti kontrol relay
+            binding.switchAuto.isEnabled = deviceOnline
+            binding.btnAutoOn.isEnabled = deviceOnline
+            binding.btnAutoOff.isEnabled = deviceOnline
+            binding.root.alpha = if (deviceOnline) 1.0f else 0.5f
 
             binding.btnAutoOn.setOnClickListener {
                 pickTime(schedule.onTime) { picked ->
