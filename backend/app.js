@@ -32,7 +32,19 @@ function withDeviceStatus(row) {
 // Kolom relay (ON/OFF) dan sensor suhu yang didukung tabel iot2.
 const STATUS_FIELDS = ['status', 'status2', 'status3', 'status4', 'status5'];
 const SUHU_FIELDS = ['suhu', 'suhu2', 'suhu3'];
-const ALL_FIELDS = [...STATUS_FIELDS, ...SUHU_FIELDS];
+// Jadwal otomatis lampu. Format: "<ON|OFF>,<HH:MM nyala>,<HH:MM mati>", contoh "ON,18:00,06:00".
+// auto1 mengatur Relay 1 (status), auto2 mengatur Relay 2 (status2) -- pemetaan ada di firmware.
+const AUTO_FIELDS = ['auto1', 'auto2'];
+const AUTO_DEFAULT = 'OFF,18:00,06:00';
+const AUTO_REGEX = /^(ON|OFF),([01]\d|2[0-3]):[0-5]\d,([01]\d|2[0-3]):[0-5]\d$/;
+const ALL_FIELDS = [...STATUS_FIELDS, ...SUHU_FIELDS, ...AUTO_FIELDS];
+
+// Payload MQTT sengaja dibuat ringkas (hanya yang dibutuhkan ESP), supaya muat di buffer ESP8266.
+function mqttPayload(row) {
+  const payload = { device: row.device };
+  for (const f of [...STATUS_FIELDS, ...AUTO_FIELDS]) payload[f] = row[f];
+  return payload;
+}
 
 // ---------------------------------------------------------------
 // Publish ke HiveMQ setiap ada update, supaya ESP8266 yang subscribe
@@ -93,6 +105,15 @@ app.post('/api/data', async (req, res) => {
       return res.status(400).json({ error: 'Field "device" wajib diisi' });
     }
 
+    // Validasi format jadwal auto (kalau dikirim)
+    for (const f of AUTO_FIELDS) {
+      if (req.body[f] !== undefined && !AUTO_REGEX.test(String(req.body[f]))) {
+        return res.status(400).json({
+          error: `Field \"${f}\" harus berformat \"ON,HH:MM,HH:MM\" atau \"OFF,HH:MM,HH:MM\"`,
+        });
+      }
+    }
+
     const latestResult = await pool.query(
       `SELECT * FROM iot2 WHERE device = $1 ORDER BY time DESC LIMIT 1`,
       [device]
@@ -106,13 +127,13 @@ app.post('/api/data', async (req, res) => {
       } else if (latest[field] !== undefined) {
         merged[field] = latest[field];
       } else {
-        merged[field] = field.startsWith('suhu') ? '0' : 'OFF';
+        merged[field] = field.startsWith('suhu') ? '0' : field.startsWith('auto') ? AUTO_DEFAULT : 'OFF';
       }
     }
 
     const insertResult = await pool.query(
-      `INSERT INTO iot2 (device, status, status2, status3, status4, status5, suhu, suhu2, suhu3, time)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+      `INSERT INTO iot2 (device, status, status2, status3, status4, status5, suhu, suhu2, suhu3, auto1, auto2, time)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
        ON CONFLICT (device) DO UPDATE SET
          status  = EXCLUDED.status,
          status2 = EXCLUDED.status2,
@@ -122,19 +143,22 @@ app.post('/api/data', async (req, res) => {
          suhu    = EXCLUDED.suhu,
          suhu2   = EXCLUDED.suhu2,
          suhu3   = EXCLUDED.suhu3,
+         auto1   = EXCLUDED.auto1,
+         auto2   = EXCLUDED.auto2,
          time    = EXCLUDED.time
        RETURNING *`,
       [
         device,
         merged.status, merged.status2, merged.status3, merged.status4, merged.status5,
         merged.suhu, merged.suhu2, merged.suhu3,
+        merged.auto1, merged.auto2,
       ]
     );
 
     const savedRow = insertResult.rows[0];
 
     // Publish ke HiveMQ (best-effort, tidak memblokir response kalau gagal)
-    await publishUpdate(device, savedRow);
+    await publishUpdate(device, mqttPayload(savedRow));
 
     res.status(201).json({ success: true, data: withDeviceStatus(savedRow) });
   } catch (err) {

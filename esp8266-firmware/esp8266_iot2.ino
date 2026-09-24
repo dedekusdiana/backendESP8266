@@ -35,8 +35,8 @@
 #include <ArduinoJson.h>
 
 // ------------------- GANTI SESUAI KEBUTUHANMU -------------------
-const char* WIFI_SSID     = "IOT";
-const char* WIFI_PASSWORD = "rayyanazka";
+const char* WIFI_SSID     = "ESP-01_AP";
+const char* WIFI_PASSWORD = "123456789";
 
 // Backend Vercel (dipakai buat heartbeat status online)
 const char* HEARTBEAT_URL = "https://backend-esp-8266.vercel.app/api/heartbeat";
@@ -45,7 +45,7 @@ const char* HEARTBEAT_URL = "https://backend-esp-8266.vercel.app/api/heartbeat";
 const char* MQTT_HOST = "99a913d804834091bc755acbd559d13f.s1.eu.hivemq.cloud";
 const int   MQTT_PORT = 8883;
 const char* MQTT_USER = "dede_smarthome";
-const char* MQTT_PASS = "rayyanazka";
+const char* MQTT_PASS = "ISI_PASSWORD_HIVEMQ_KAMU";
 
 // Backend Vercel -- dipakai ESP melapor status relay setelah jadwal auto berjalan
 const char* DATA_URL = "https://backend-esp-8266.vercel.app/api/data";

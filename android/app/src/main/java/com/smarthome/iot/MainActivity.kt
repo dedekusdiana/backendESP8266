@@ -25,6 +25,7 @@ class MainActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
 
     private lateinit var relayAdapter: RelayAdapter
+    private lateinit var autoAdapter: AutoAdapter
 
     private var deviceNames: List<String> = emptyList()
     private var selectedDevice: String? = null
@@ -51,8 +52,16 @@ class MainActivity : AppCompatActivity() {
             onEditLabel = { jsonKey, currentLabel -> showRenameDialog(currentLabel) { newLabel ->
                 selectedDevice?.let { labelPrefs.setLabel(it, jsonKey, newLabel) }
                 relayAdapter.refreshLabels()
+                autoAdapter.refreshLabels()
             } }
         )
+        autoAdapter = AutoAdapter(
+            labelPrefs = labelPrefs,
+            onChange = { jsonKey, newRaw -> updateField(jsonKey, newRaw) }
+        )
+        binding.autoRecyclerView.layoutManager = LinearLayoutManager(this)
+        binding.autoRecyclerView.adapter = autoAdapter
+
         binding.relayRecyclerView.layoutManager = LinearLayoutManager(this)
         binding.relayRecyclerView.adapter = relayAdapter
 
@@ -270,5 +279,6 @@ class MainActivity : AppCompatActivity() {
         )
 
         relayAdapter.submitStatus(device, item, isOnline)
+        autoAdapter.submitStatus(device, item)
     }
 }
