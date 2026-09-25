@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Smart Home IoT</string>
+    <string name="notif_channel_id">smart_home_events</string>
 </resources>

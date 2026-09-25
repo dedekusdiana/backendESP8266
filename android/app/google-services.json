@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "390269976521",
+    "project_id": "smarthome-iot-e86be",
+    "storage_bucket": "smarthome-iot-e86be.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:390269976521:android:f4d9c49f943293f15f3218",
+        "android_client_info": {
+          "package_name": "com.smarthome.iot"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA1EgNr3kkPVd5ThtA-vDhWzbGf-6LHseY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

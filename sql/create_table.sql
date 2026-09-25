@@ -67,3 +67,9 @@ ALTER TABLE iot2 ADD COLUMN IF NOT EXISTS cuaca VARCHAR(20) DEFAULT 'Cerah';
 ALTER TABLE iot2
   ADD COLUMN IF NOT EXISTS auto1 VARCHAR(20) NOT NULL DEFAULT 'OFF,18:00,06:00',
   ADD COLUMN IF NOT EXISTS auto2 VARCHAR(20) NOT NULL DEFAULT 'OFF,18:00,06:00';
+
+-- ============================================================
+-- Fitur NOTIFIKASI PUSH (deteksi offline, dipakai GET /api/cron/check-offline)
+-- ============================================================
+ALTER TABLE iot2
+  ADD COLUMN IF NOT EXISTS notified_offline BOOLEAN NOT NULL DEFAULT FALSE;

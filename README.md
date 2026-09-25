@@ -28,10 +28,43 @@ Tabel `iot2` — **1 baris per device** (di-update terus, bukan nambah baris bar
 | `device`                        | nama/ID alat ESP8266, otomatis dari Chip ID mis. `ESP-A1B2C3` (UNIK — 1 baris per device) |
 | `status`..`status5`             | status 5 relay/lampu berbeda: "ON" / "OFF"    |
 | `suhu`, `suhu2`, `suhu3`        | 3 sensor suhu+kelembaban (teks gabungan, mis. "28.5C, 65%RH") |
+| `notified_offline`               | penanda internal supaya notifikasi offline tidak dikirim berkali-kali (jangan diubah manual) |
 | `auto1`, `auto2`                | jadwal lampu otomatis, format `"ON,18:00,06:00"` (aktif/nonaktif, jam nyala, jam mati — WIB) |
 | `cuaca`                         | status cuaca: "Cerah" / "Hujan" / "Mendung"   |
 | `last_heartbeat`                | waktu heartbeat TERAKHIR dari ESP (dipakai hitung online/offline) |
 | `time`                          | otomatis diisi server tiap kali baris ini di-update |
+
+## Fitur NOTIFIKASI PUSH
+
+App menerima notifikasi otomatis (walau ditutup) untuk:
+- Relay menyala/mati, baik ditekan manual maupun oleh jadwal Auto
+- Device offline (dicek tiap 5 menit lewat Vercel Cron), dan saat device online kembali
+
+**Cara kerja:** setiap kejadian dikirim ke *topic* Firebase bernama `device_<nama device>`. HP
+subscribe ke topic itu otomatis saat pelanggan menambahkan device lewat tombol **+** (lihat
+`DeviceStore.kt`), dan berhenti (unsubscribe) saat device dihapus dari app. Tidak ada token per HP
+yang disimpan di database — jadi kalau 2 HP menambahkan device yang sama, keduanya dapat notifikasi.
+
+### Setup (sekali saja)
+
+1. Buka [Firebase Console](https://console.firebase.google.com) → buat project baru (gratis).
+2. **Tambah app Android**: applicationId `com.smarthome.iot` → download `google-services.json` →
+   taruh di `android/app/google-services.json` (lihat `google-services.json.CONTOH` di folder itu).
+3. **Buat Service Account**: Project Settings → Service accounts → Generate new private key →
+   sebuah file `.json` terdownload.
+4. Isi environment variable di Vercel: `FIREBASE_SERVICE_ACCOUNT_JSON` = **seluruh isi** file itu,
+   ditempel sebagai satu baris teks (boleh langsung tempel isi file JSON-nya apa adanya).
+5. Redeploy backend, lalu build ulang APK (karena ada dependency & permission baru).
+6. Di HP: saat pertama buka app akan diminta izin notifikasi (Android 13 ke atas) — pilih Izinkan.
+
+Tanpa langkah di atas, semua fitur lain (relay, auto, suhu, cuaca) tetap berjalan normal —
+notifikasi hanya dilewati diam-diam kalau `FIREBASE_SERVICE_ACCOUNT_JSON` belum diisi.
+
+### Jadwal cron (deteksi offline)
+
+`vercel.json` sudah berisi jadwal yang memanggil `/api/cron/check-offline` tiap 5 menit (Vercel
+Cron aktif otomatis di paket Hobby/Free, tidak perlu setup tambahan). Ambang offline memakai
+`OFFLINE_THRESHOLD_SECONDS` yang sama dengan yang menentukan status_device di app.
 
 ## Fitur AUTO (jadwal nyala/mati lampu)
 
@@ -183,7 +216,9 @@ Device `ESP-XXXXXX` harus muncul. Lalu di app Android: tombol **+** → isi ID &
   Daftar itu disimpan di HP; tombol tempat sampah menghapus device dari app (alatnya tetap jalan).
 - **Kode aktivasi** dibuat dari nama device + `DEVICE_CODE_SECRET` (HMAC), tidak disimpan di
   database. Setiap alat punya kode berbeda, dan tanpa kode yang benar server menolak baca/kontrol (403).
-- **Membuat stiker** — saat flashing tiap alat, catat `Device: ESP-XXXXXX` dari Serial Monitor, lalu:
+- **Cara paling mudah:** buka `tools/generator-kode.html` di browser, tempel kunci rahasia dan ID alat,
+  kodenya langsung muncul (bisa disalin atau dicetak). Semua dihitung di browser, tidak dikirim ke mana pun.
+- **Alternatif lewat terminal** — saat flashing tiap alat, catat `Device: ESP-XXXXXX` dari Serial Monitor, lalu:
 
   ```bash
   cd backend

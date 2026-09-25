@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pembuat kode aktivasi</title>
+<style>
+  :root {
+    --bg: #F0F2F5;
+    --card: #FFFFFF;
+    --ink: #0D2A4A;
+    --muted: #5F6B7A;
+    --line: #DDE3EA;
+    --blue: #1976D2;
+    --blue-dark: #1565C0;
+    --warn: #B26A00;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  main { max-width: 640px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 26px; line-height: 1.2; margin: 0 0 8px; }
+  .intro { color: var(--muted); margin: 0 0 24px; max-width: 60ch; }
+
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  label { display: block; font-weight: 600; margin-bottom: 6px; }
+  .hint { color: var(--muted); font-size: 14px; margin: 6px 0 0; }
+  .field + .field { margin-top: 18px; }
+
+  .row { display: flex; gap: 8px; }
+  input, textarea {
+    width: 100%;
+    font: inherit;
+    color: var(--ink);
+    background: #fff;
+    border: 1px solid #C5CED8;
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+  textarea { min-height: 120px; resize: vertical; font-family: ui-monospace, Consolas, monospace; }
+  input:focus-visible, textarea:focus-visible, button:focus-visible {
+    outline: 3px solid rgba(25,118,210,.35);
+    outline-offset: 1px;
+  }
+
+  button {
+    font: inherit;
+    font-weight: 600;
+    border-radius: 10px;
+    border: 1px solid var(--blue);
+    background: var(--blue);
+    color: #fff;
+    padding: 9px 16px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button:hover { background: var(--blue-dark); }
+  button.quiet { background: #fff; color: var(--blue); }
+  button.quiet:hover { background: #EAF2FB; }
+
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .empty { color: var(--muted); margin: 0; }
+  .warn { color: var(--warn); font-size: 14px; margin: 4px 0 0; }
+
+  .ticket {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border: 1.5px dashed #9FB3C8;
+    border-radius: 12px;
+    padding: 12px 14px;
+  }
+  .ticket + .ticket { margin-top: 10px; }
+  .ticket .id { font-size: 14px; color: var(--muted); }
+  .ticket .code {
+    font: 700 24px/1.2 ui-monospace, Consolas, monospace;
+    letter-spacing: .04em;
+  }
+  .ticket .copy { padding: 7px 12px; }
+
+  .note { font-size: 14px; color: var(--muted); }
+
+  @media (max-width: 460px) {
+    .ticket { flex-direction: column; align-items: flex-start; }
+    .ticket .code { font-size: 22px; }
+  }
+
+  @media print {
+    body { background: #fff; }
+    main { padding: 0; max-width: none; }
+    h1, .intro, .form-panel, .toolbar, .note, .copy, .warn { display: none !important; }
+    .panel { border: 0; padding: 0; margin: 0; background: none; }
+    #results { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .ticket { break-inside: avoid; margin: 0 !important; border: 1.5px dashed #444; }
+    .ticket .id { color: #000; font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Pembuat kode aktivasi</h1>
+  <p class="intro">Isi kunci rahasia dan ID alat, kodenya langsung muncul. Semua dihitung di browser ini. Tidak ada yang dikirim ke internet dan tidak ada yang disimpan.</p>
+
+  <section class="panel form-panel">
+    <div class="field">
+      <label for="secret">Kunci rahasia</label>
+      <div class="row">
+        <input id="secret" type="password" autocomplete="off" spellcheck="false" placeholder="Tempel DEVICE_CODE_SECRET di sini">
+        <button type="button" class="quiet" id="toggle">Tampilkan</button>
+      </div>
+      <p class="hint">Harus sama persis dengan <code>DEVICE_CODE_SECRET</code> di Vercel. Kalau beda satu huruf saja, kodenya tidak akan diterima.</p>
+    </div>
+
+    <div class="field">
+      <label for="ids">ID alat (satu per baris)</label>
+      <textarea id="ids" spellcheck="false" placeholder="ESP-A1B2C3&#10;ESP-D4E5F6"></textarea>
+      <p class="hint">ID ada di Serial Monitor, di baris <code>Device: ESP-XXXXXX</code>.</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="toolbar">
+      <button type="button" id="copyAll" class="quiet" disabled>Salin semua</button>
+      <button type="button" id="print" class="quiet" disabled>Cetak stiker</button>
+    </div>
+    <div id="results" aria-live="polite"></div>
+    <p class="note" id="note"></p>
+  </section>
+</main>
+
+<script>
+/* ---------- SHA-256 + HMAC (ditulis manual supaya jalan di browser mana pun, langsung dari file) ---------- */
+// KODE-INTI-MULAI
+const SHA_K = [
+  0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+  0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+  0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+  0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+  0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+  0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+  0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+  0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+];
+
+function sha256(msg) {
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+  const len = msg.length;
+  const total = ((len + 9 + 63) >> 6) << 6;
+  const data = new Uint8Array(total);
+  data.set(msg);
+  data[len] = 0x80;
+  const hi = Math.floor(len / 0x20000000);
+  const lo = (len << 3) >>> 0;
+  data[total - 8] = hi >>> 24; data[total - 7] = hi >>> 16; data[total - 6] = hi >>> 8; data[total - 5] = hi;
+  data[total - 4] = lo >>> 24; data[total - 3] = lo >>> 16; data[total - 2] = lo >>> 8; data[total - 1] = lo;
+
+  let h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a,
+      h4 = 0x510e527f, h5 = 0x9b05688c, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;
+  const w = new Array(64);
+
+  for (let off = 0; off < total; off += 64) {
+    for (let i = 0; i < 16; i++) {
+      const j = off + i * 4;
+      w[i] = ((data[j] << 24) | (data[j + 1] << 16) | (data[j + 2] << 8) | data[j + 3]) | 0;
+    }
+    for (let i = 16; i < 64; i++) {
+      const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+      const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+    }
+    let a = h0, b = h1, c = h2, d = h3, e = h4, f = h5, g = h6, h = h7;
+    for (let i = 0; i < 64; i++) {
+      const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (h + S1 + ch + SHA_K[i] + w[i]) | 0;
+      const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (S0 + maj) | 0;
+      h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+    }
+    h0 = (h0 + a) | 0; h1 = (h1 + b) | 0; h2 = (h2 + c) | 0; h3 = (h3 + d) | 0;
+    h4 = (h4 + e) | 0; h5 = (h5 + f) | 0; h6 = (h6 + g) | 0; h7 = (h7 + h) | 0;
+  }
+
+  const out = new Uint8Array(32);
+  [h0, h1, h2, h3, h4, h5, h6, h7].forEach((v, i) => {
+    out[i * 4] = v >>> 24; out[i * 4 + 1] = v >>> 16; out[i * 4 + 2] = v >>> 8; out[i * 4 + 3] = v;
+  });
+  return out;
+}
+
+function hmacSha256(keyBytes, msgBytes) {
+  let key = keyBytes.length > 64 ? sha256(keyBytes) : keyBytes;
+  const ipad = new Uint8Array(64 + msgBytes.length);
+  const opad = new Uint8Array(64 + 32);
+  for (let i = 0; i < 64; i++) {
+    const kb = i < key.length ? key[i] : 0;
+    ipad[i] = kb ^ 0x36;
+    opad[i] = kb ^ 0x5c;
+  }
+  ipad.set(msgBytes, 64);
+  opad.set(sha256(ipad), 64);
+  return sha256(opad);
+}
+
+// Rumus yang SAMA dengan backend (backend/auth.js): 10 karakter dari HMAC-SHA256(kunci, ID alat).
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function deviceCode(secret, device) {
+  const enc = new TextEncoder();
+  const digest = hmacSha256(enc.encode(secret), enc.encode(device));
+  let out = '';
+  for (let i = 0; i < 10; i++) out += CODE_ALPHABET[digest[i] % CODE_ALPHABET.length];
+  return out.slice(0, 5) + '-' + out.slice(5);
+}
+// KODE-INTI-SELESAI
+
+/* ---------- Tampilan ---------- */
+const $ = (id) => document.getElementById(id);
+const secretEl = $('secret'), idsEl = $('ids'), resultsEl = $('results'), noteEl = $('note');
+let current = [];
+
+function render() {
+  const secret = secretEl.value.trim();
+  const ids = [...new Set(idsEl.value.split(/\r?\n/).map(s => s.trim().toUpperCase()).filter(Boolean))];
+  current = [];
+  resultsEl.innerHTML = '';
+  noteEl.textContent = '';
+
+  if (!secret || ids.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'empty';
+    p.textContent = 'Isi kunci rahasia dan minimal satu ID alat. Kodenya muncul di sini.';
+    resultsEl.appendChild(p);
+    $('copyAll').disabled = true;
+    $('print').disabled = true;
+    return;
+  }
+
+  const odd = [];
+  ids.forEach((id) => {
+    const code = deviceCode(secret, id);
+    current.push({ id, code });
+    if (!/^ESP-[0-9A-F]{6}$/.test(id)) odd.push(id);
+
+    const box = document.createElement('div');
+    box.className = 'ticket';
+
+    const left = document.createElement('div');
+    const idEl = document.createElement('div');
+    idEl.className = 'id';
+    idEl.textContent = 'ID: ' + id;
+    const codeEl = document.createElement('div');
+    codeEl.className = 'code';
+    codeEl.textContent = code;
+    left.append(idEl, codeEl);
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'quiet copy';
+    btn.textContent = 'Salin kode';
+    btn.addEventListener('click', () => copyText(code, btn, 'Salin kode'));
+
+    box.append(left, btn);
+    resultsEl.appendChild(box);
+  });
+
+  if (odd.length) {
+    const w = document.createElement('p');
+    w.className = 'warn';
+    w.textContent = 'Periksa lagi: ' + odd.join(', ') + '. ID alat biasanya berbentuk ESP- diikuti 6 huruf atau angka (0-9, A-F).';
+    resultsEl.appendChild(w);
+  }
+  noteEl.textContent = 'Di app, isi ID dan kode persis seperti tampil di sini. Huruf besar atau kecil tidak berpengaruh.';
+  $('copyAll').disabled = false;
+  $('print').disabled = false;
+}
+
+function copyText(text, btn, label) {
+  const done = () => { btn.textContent = 'Tersalin'; setTimeout(() => { btn.textContent = label; }, 1500); };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
+  } else {
+    fallbackCopy(text, done);
+  }
+}
+function fallbackCopy(text, done) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); done(); } catch (e) { /* abaikan */ }
+  document.body.removeChild(ta);
+}
+
+secretEl.addEventListener('input', render);
+idsEl.addEventListener('input', render);
+$('toggle').addEventListener('click', () => {
+  const show = secretEl.type === 'password';
+  secretEl.type = show ? 'text' : 'password';
+  $('toggle').textContent = show ? 'Sembunyikan' : 'Tampilkan';
+});
+$('copyAll').addEventListener('click', () => {
+  copyText(current.map(c => c.id + '\t' + c.code).join('\n'), $('copyAll'), 'Salin semua');
+});
+$('print').addEventListener('click', () => window.print());
+
+render();
+</script>
+</body>
+</html>
