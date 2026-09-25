@@ -3,7 +3,6 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const mqtt = require('mqtt');
 const { codeMatches, requireDeviceCode, requireAdmin } = require('./auth');
-const { notifyDevice } = require('./push');
 
 const app = express();
 app.use(cors());
@@ -37,7 +36,6 @@ const SUHU_FIELDS = ['suhu', 'suhu2', 'suhu3'];
 // Jadwal otomatis lampu. Format: "<ON|OFF>,<HH:MM nyala>,<HH:MM mati>", contoh "ON,18:00,06:00".
 // auto1 mengatur Relay 1 (status), auto2 mengatur Relay 2 (status2) -- pemetaan ada di firmware.
 const AUTO_FIELDS = ['auto1', 'auto2'];
-const RELAY_LABELS = { status: 'Relay 1', status2: 'Relay 2', status3: 'Relay 3', status4: 'Relay 4', status5: 'Relay 5' };
 const AUTO_DEFAULT = 'OFF,18:00,06:00';
 const AUTO_REGEX = /^(ON|OFF),([01]\d|2[0-3]):[0-5]\d,([01]\d|2[0-3]):[0-5]\d$/;
 const ALL_FIELDS = [...STATUS_FIELDS, ...SUHU_FIELDS, ...AUTO_FIELDS];
@@ -163,14 +161,6 @@ app.post('/api/data', requireDeviceCode, async (req, res) => {
     // Publish ke HiveMQ (best-effort, tidak memblokir response kalau gagal)
     await publishUpdate(device, mqttPayload(savedRow));
 
-    // Notifikasi push kalau ada relay yang benar-benar berubah (best-effort, tidak menunggu)
-    for (const field of STATUS_FIELDS) {
-      if (latest[field] !== undefined && latest[field] !== merged[field]) {
-        const label = RELAY_LABELS[field] || field;
-        notifyDevice(device, label, `${label} ${merged[field] === 'ON' ? 'menyala' : 'mati'}`);
-      }
-    }
-
     res.status(201).json({ success: true, data: withDeviceStatus(savedRow) });
   } catch (err) {
     console.error('Error in POST /api/data:', err);
@@ -195,21 +185,20 @@ app.post('/api/heartbeat', async (req, res) => {
     // (tidak lewat /api/data lagi, karena /api/data sekarang butuh kode aktivasi milik pelanggan).
     const onOff = (v) => (v === 'ON' || v === 'OFF' ? v : null);
 
-    const before = (await pool.query(
-      `SELECT status, status2, suhu, suhu2, suhu3, cuaca, notified_offline FROM iot2 WHERE device = $1`,
-      [device]
-    )).rows[0] || {};
-
     // Field yang tidak dikirim ESP (mis. laporan relay saja dari jadwal auto, tanpa suhu/cuaca)
     // dijaga tetap ada nilainya, supaya tidak melanggar NOT NULL saat device BARU pertama kali lapor.
-    const suhuVal  = suhu   !== undefined ? String(suhu)   : (before.suhu   ?? '0');
-    const suhu2Val = suhu2  !== undefined ? String(suhu2)  : (before.suhu2  ?? '0');
-    const suhu3Val = suhu3  !== undefined ? String(suhu3)  : (before.suhu3  ?? '0');
-    const cuacaVal = cuaca  !== undefined ? String(cuaca)  : (before.cuaca  ?? '-');
+    const before = (await pool.query(
+      `SELECT suhu, suhu2, suhu3, cuaca FROM iot2 WHERE device = $1`,
+      [device]
+    )).rows[0] || {};
+    const suhuVal  = suhu  !== undefined ? String(suhu)  : (before.suhu  ?? '0');
+    const suhu2Val = suhu2 !== undefined ? String(suhu2) : (before.suhu2 ?? '0');
+    const suhu3Val = suhu3 !== undefined ? String(suhu3) : (before.suhu3 ?? '0');
+    const cuacaVal = cuaca !== undefined ? String(cuaca) : (before.cuaca ?? '-');
 
     const result = await pool.query(
-      `INSERT INTO iot2 (device, status, status2, suhu, suhu2, suhu3, cuaca, last_heartbeat, notified_offline)
-       VALUES ($1, COALESCE($2::varchar, 'OFF'), COALESCE($3::varchar, 'OFF'), $4, $5, $6, $7, NOW(), FALSE)
+      `INSERT INTO iot2 (device, status, status2, suhu, suhu2, suhu3, cuaca, last_heartbeat)
+       VALUES ($1, COALESCE($2::varchar, 'OFF'), COALESCE($3::varchar, 'OFF'), $4, $5, $6, $7, NOW())
        ON CONFLICT (device) DO UPDATE SET
          status  = COALESCE($2::varchar, iot2.status),
          status2 = COALESCE($3::varchar, iot2.status2),
@@ -217,56 +206,16 @@ app.post('/api/heartbeat', async (req, res) => {
          suhu2 = COALESCE(EXCLUDED.suhu2, iot2.suhu2),
          suhu3 = COALESCE(EXCLUDED.suhu3, iot2.suhu3),
          cuaca = COALESCE(EXCLUDED.cuaca, iot2.cuaca),
-         last_heartbeat = NOW(),
-         notified_offline = FALSE
+         last_heartbeat = NOW()
        RETURNING *`,
       [device, onOff(status), onOff(status2), suhuVal, suhu2Val, suhu3Val, cuacaVal]
     );
-    const savedRow = result.rows[0];
-
-    // Notifikasi kalau relay berubah gara-gara jadwal auto (before ada isinya hanya kalau device sudah pernah lapor)
-    if (before.status !== undefined) {
-      for (const field of ['status', 'status2']) {
-        if (before[field] !== undefined && before[field] !== savedRow[field]) {
-          const label = RELAY_LABELS[field] || field;
-          notifyDevice(device, label, `${label} ${savedRow[field] === 'ON' ? 'menyala' : 'mati'} (jadwal auto)`);
-        }
-      }
-    }
-    // Alat baru online lagi setelah sempat offline -> kabari (notified_offline sebelumnya true)
-    if (before.notified_offline) {
-      notifyDevice(device, 'Kembali online', `${device} terhubung kembali`);
-    }
 
     // Tidak mengembalikan data device ke pemanggil (endpoint ini tanpa kode aktivasi)
-    res.json({ success: true, status_device: withDeviceStatus(savedRow).status_device });
+    res.json({ success: true, status_device: withDeviceStatus(result.rows[0]).status_device });
   } catch (err) {
     console.error('Error in POST /api/heartbeat:', err);
     res.status(500).json({ error: 'Gagal menyimpan heartbeat' });
-  }
-});
-
-// ---------------------------------------------------------------
-// GET /api/cron/check-offline -- dipanggil terjadwal (Vercel Cron, lihat vercel.json) tiap 5 menit.
-// Device yang sudah lewat OFFLINE_THRESHOLD_SECONDS dan belum pernah dikabari -> kirim notifikasi
-// sekali saja (ditandai notified_offline), supaya tidak spam tiap kali cron jalan.
-// ---------------------------------------------------------------
-app.get('/api/cron/check-offline', async (req, res) => {
-  try {
-    const { rows } = await pool.query(
-      `UPDATE iot2 SET notified_offline = TRUE
-       WHERE notified_offline = FALSE
-         AND last_heartbeat < NOW() - INTERVAL '1 second' * $1
-       RETURNING device`,
-      [OFFLINE_THRESHOLD_SECONDS]
-    );
-    for (const row of rows) {
-      await notifyDevice(row.device, 'Device offline', `${row.device} tidak terhubung`);
-    }
-    res.json({ success: true, notified: rows.map(r => r.device) });
-  } catch (err) {
-    console.error('Error in GET /api/cron/check-offline:', err);
-    res.status(500).json({ error: 'Gagal cek device offline' });
   }
 });
 

@@ -1,9 +1,6 @@
 package com.smarthome.iot
 
-import android.Manifest
 import android.app.AlertDialog
-import android.content.pm.PackageManager
-import android.os.Build
 import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
@@ -14,9 +11,7 @@ import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.smarthome.iot.databinding.ActivityMainBinding
 import kotlinx.coroutines.CoroutineScope
@@ -95,9 +90,6 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnAddDevice.setOnClickListener { showAddDeviceDialog() }
         binding.btnRemoveDevice.setOnClickListener { confirmRemoveDevice() }
-
-        askNotificationPermissionIfNeeded()
-        deviceStore.resubscribeAll() // jaga-jaga kalau subscribe sebelumnya sempat gagal
 
         loadDeviceListThenStatus()
         // Pertama kali install (belum ada device) -> langsung minta pelanggan menambahkan device
@@ -204,17 +196,6 @@ class MainActivity : AppCompatActivity() {
         refreshSuhuTitles()
 
         loadStatus(showSpinner = true)
-    }
-
-    private val notifPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* diabaikan kalau ditolak: fitur lain tetap jalan */ }
-
-    /** Android 13+ (API 33) mewajibkan izin run-time supaya notifikasi bisa tampil. */
-    private fun askNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
-        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED
-        if (!granted) notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     private fun showAddDeviceDialog() {
