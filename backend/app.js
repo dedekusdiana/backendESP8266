@@ -195,7 +195,17 @@ app.post('/api/heartbeat', async (req, res) => {
     // (tidak lewat /api/data lagi, karena /api/data sekarang butuh kode aktivasi milik pelanggan).
     const onOff = (v) => (v === 'ON' || v === 'OFF' ? v : null);
 
-    const before = (await pool.query(`SELECT status, status2, notified_offline FROM iot2 WHERE device = $1`, [device])).rows[0] || {};
+    const before = (await pool.query(
+      `SELECT status, status2, suhu, suhu2, suhu3, cuaca, notified_offline FROM iot2 WHERE device = $1`,
+      [device]
+    )).rows[0] || {};
+
+    // Field yang tidak dikirim ESP (mis. laporan relay saja dari jadwal auto, tanpa suhu/cuaca)
+    // dijaga tetap ada nilainya, supaya tidak melanggar NOT NULL saat device BARU pertama kali lapor.
+    const suhuVal  = suhu   !== undefined ? String(suhu)   : (before.suhu   ?? '0');
+    const suhu2Val = suhu2  !== undefined ? String(suhu2)  : (before.suhu2  ?? '0');
+    const suhu3Val = suhu3  !== undefined ? String(suhu3)  : (before.suhu3  ?? '0');
+    const cuacaVal = cuaca  !== undefined ? String(cuaca)  : (before.cuaca  ?? '-');
 
     const result = await pool.query(
       `INSERT INTO iot2 (device, status, status2, suhu, suhu2, suhu3, cuaca, last_heartbeat, notified_offline)
@@ -210,15 +220,7 @@ app.post('/api/heartbeat', async (req, res) => {
          last_heartbeat = NOW(),
          notified_offline = FALSE
        RETURNING *`,
-      [
-        device,
-        onOff(status),
-        onOff(status2),
-        suhu !== undefined ? String(suhu) : null,
-        suhu2 !== undefined ? String(suhu2) : null,
-        suhu3 !== undefined ? String(suhu3) : null,
-        cuaca !== undefined ? String(cuaca) : null,
-      ]
+      [device, onOff(status), onOff(status2), suhuVal, suhu2Val, suhu3Val, cuacaVal]
     );
     const savedRow = result.rows[0];
 
