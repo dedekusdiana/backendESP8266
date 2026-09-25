@@ -1,0 +1,10 @@
+Ini BUKAN file asli -- hanya penanda lokasi.
+
+Setelah kamu membuat project di Firebase Console (https://console.firebase.google.com):
+1. Tambah app Android dengan applicationId: com.smarthome.iot
+2. Download file "google-services.json" yang diberikan Firebase.
+3. Taruh file itu di folder ini (android/app/), SEJAJAR dengan file ini, dengan nama PERSIS:
+      google-services.json
+4. Hapus / abaikan file .CONTOH ini -- ini cuma pengingat, tidak dipakai oleh Gradle.
+
+Tanpa file google-services.json yang asli, build APK akan gagal (error "File google-services.json is missing").

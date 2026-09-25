@@ -358,5 +358,3 @@ app.get('/api/status/:device', requireDeviceCode, async (req, res) => {
 });
 
 module.exports = app;
-
-

@@ -46,6 +46,6 @@ class DeviceStore(context: Context) {
     companion object {
         // HARUS SAMA PERSIS dengan topicOf() di backend/push.js
         fun topicOf(device: String): String =
-            "device_" + device.replace(Regex("""[^a-zA-Z0-9\-_.~%]"""), "_")
+            "device_" + device.replace(Regex("[^a-zA-Z0-9\-_.~%]"), "_")
     }
 }
