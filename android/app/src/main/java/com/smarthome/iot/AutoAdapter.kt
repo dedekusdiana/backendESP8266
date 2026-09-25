@@ -10,15 +10,23 @@ import com.smarthome.iot.databinding.ItemAutoBinding
 
 /** Daftar kartu jadwal otomatis (Auto 1, Auto 2) yang tampil di atas Kontrol Relay. */
 class AutoAdapter(
+    private val labelPrefs: LabelPrefs,
     private val onChange: (jsonKey: String, newRaw: String) -> Unit
 ) : RecyclerView.Adapter<AutoAdapter.AutoViewHolder>() {
 
+    private var currentDevice: String = ""
     private var currentItem: DeviceStatusItem? = null
     private var deviceOnline: Boolean = true
 
-    fun submitStatus(item: DeviceStatusItem, isDeviceOnline: Boolean) {
+    fun submitStatus(device: String, item: DeviceStatusItem, isDeviceOnline: Boolean) {
+        currentDevice = device
         currentItem = item
         deviceOnline = isDeviceOnline
+        notifyItemRangeChanged(0, AUTO_FIELDS.size)
+    }
+
+    /** Dipanggil setelah user rename relay, supaya judul kartu Auto ikut berubah. */
+    fun refreshLabels() {
         notifyItemRangeChanged(0, AUTO_FIELDS.size)
     }
 
@@ -32,7 +40,9 @@ class AutoAdapter(
         val schedule = AutoSchedule.parse(currentItem?.valueForAuto(field.jsonKey))
         // Status lampu = status relay yang dikendalikan auto ini (Auto 1 -> Relay 1, Auto 2 -> Relay 2)
         val lampOn = currentItem?.valueFor(field.relayKey).equals("ON", ignoreCase = true)
-        holder.bind(field, schedule, lampOn, deviceOnline)
+        val relayDefault = RELAY_FIELDS.firstOrNull { it.jsonKey == field.relayKey }?.label ?: field.relayKey
+        val relayLabel = labelPrefs.getLabel(currentDevice, field.relayKey, relayDefault)
+        holder.bind(field, relayLabel, schedule, lampOn, deviceOnline)
     }
 
     override fun getItemCount(): Int = AUTO_FIELDS.size
@@ -42,8 +52,8 @@ class AutoAdapter(
         private val onChange: (jsonKey: String, newRaw: String) -> Unit
     ) : RecyclerView.ViewHolder(binding.root) {
 
-        fun bind(field: AutoField, schedule: AutoSchedule, lampOn: Boolean, deviceOnline: Boolean) {
-            binding.tvAutoTitle.text = field.label
+        fun bind(field: AutoField, relayLabel: String, schedule: AutoSchedule, lampOn: Boolean, deviceOnline: Boolean) {
+            binding.tvAutoTitle.text = "${field.label} ($relayLabel)"
 
             // Indikator lampu
             binding.tvAutoLamp.text = if (lampOn) "\u25CF Menyala" else "\u25CF Mati"
