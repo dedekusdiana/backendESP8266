@@ -1,5 +1,0 @@
-{
-  "crons": [
-    { "path": "/api/cron/check-offline", "schedule": "*/5 * * * *" }
-  ]
-}
