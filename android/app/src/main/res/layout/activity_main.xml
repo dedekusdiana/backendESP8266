@@ -358,7 +358,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="SENSOR SUHU"
+                        android:text="SENSOR"
                         android:textSize="11sp"
                         android:letterSpacing="0.05"
                         android:textColor="@color/mutedText"
@@ -370,13 +370,6 @@
                         android:layout_weight="1"
                         android:layout_marginHorizontal="10dp"
                         android:background="@color/dividerLine" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="3 Sensor"
-                        android:textSize="11sp"
-                        android:textColor="@color/mutedText" />
 
                 </LinearLayout>
 
@@ -484,6 +477,13 @@
 
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/sensorRecyclerView"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:nestedScrollingEnabled="false" />
 
                 <!-- Auto (jadwal lampu) -->
                 <LinearLayout

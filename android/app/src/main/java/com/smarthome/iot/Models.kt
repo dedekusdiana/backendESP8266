@@ -9,7 +9,6 @@ data class DeviceStatusItem(
     @SerializedName("status2") val status2: String,
     @SerializedName("status3") val status3: String,
     @SerializedName("status4") val status4: String,
-    @SerializedName("status5") val status5: String,
     @SerializedName("suhu") val suhu: String,
     @SerializedName("suhu2") val suhu2: String,
     @SerializedName("suhu3") val suhu3: String,
@@ -17,7 +16,10 @@ data class DeviceStatusItem(
     @SerializedName("auto1") val auto1: String? = null,
     @SerializedName("auto2") val auto2: String? = null,
     @SerializedName("time") val time: String,
-    @SerializedName("status_device") val statusDevice: String? = null
+    @SerializedName("status_device") val statusDevice: String? = null,
+    // Sensor (bukan relay -- read-only, dilaporkan ESP lewat heartbeat)
+    @SerializedName("status_pir") val statusPir: String? = null,
+    @SerializedName("status_dor_win") val statusDorWin: String? = null
 )
 
 data class StatusListResponse(
@@ -43,7 +45,6 @@ val RELAY_FIELDS = listOf(
     RelayField("Relay 2", "status2"),
     RelayField("Relay 3", "status3"),
     RelayField("Relay 4", "status4"),
-    RelayField("Relay 5", "status5"),
 )
 
 data class SuhuField(val label: String, val jsonKey: String)
@@ -66,7 +67,6 @@ fun DeviceStatusItem.valueFor(jsonKey: String): String = when (jsonKey) {
     "status2" -> status2
     "status3" -> status3
     "status4" -> status4
-    "status5" -> status5
     else -> "OFF"
 }
 
@@ -99,4 +99,21 @@ fun DeviceStatusItem.valueForAuto(jsonKey: String): String = when (jsonKey) {
     "auto1" -> auto1 ?: AUTO_DEFAULT
     "auto2" -> auto2 ?: AUTO_DEFAULT
     else -> AUTO_DEFAULT
+}
+
+/**
+ * Sensor read-only (BUKAN relay -- tidak ada tombol nyala/mati dari app, cuma pembacaan dari ESP).
+ * onText/offText = teks yang ditampilkan, beda-beda tiap sensor (bukan cuma "ON"/"OFF").
+ */
+data class SensorField(val label: String, val jsonKey: String, val onText: String, val offText: String, val icon: String)
+
+val SENSOR_FIELDS = listOf(
+    SensorField("Sensor Gerak (PIR)", "status_pir", "Ada Gerak", "Aman", "\uD83D\uDEB6"),
+    SensorField("Pintu / Jendela", "status_dor_win", "Buka", "Tutup", "\uD83D\uDEAA"),
+)
+
+fun DeviceStatusItem.valueForSensor(jsonKey: String): String = when (jsonKey) {
+    "status_pir" -> statusPir ?: "OFF"
+    "status_dor_win" -> statusDorWin ?: "OFF"
+    else -> "OFF"
 }

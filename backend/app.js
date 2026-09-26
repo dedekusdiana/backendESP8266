@@ -31,7 +31,9 @@ function withDeviceStatus(row) {
 }
 
 // Kolom relay (ON/OFF) dan sensor suhu yang didukung tabel iot2.
-const STATUS_FIELDS = ['status', 'status2', 'status3', 'status4', 'status5'];
+const STATUS_FIELDS = ['status', 'status2', 'status3', 'status4'];
+// Sensor (bukan relay -- tidak bisa dinyalakan/dimatikan dari app, cuma laporan dari ESP lewat /api/heartbeat)
+const SENSOR_FIELDS = ['status_pir', 'status_dor_win'];
 const SUHU_FIELDS = ['suhu', 'suhu2', 'suhu3'];
 // Jadwal otomatis lampu. Format: "<ON|OFF>,<HH:MM nyala>,<HH:MM mati>", contoh "ON,18:00,06:00".
 // auto1 mengatur Relay 1 (status), auto2 mengatur Relay 2 (status2) -- pemetaan ada di firmware.
@@ -133,14 +135,13 @@ app.post('/api/data', requireDeviceCode, async (req, res) => {
     }
 
     const insertResult = await pool.query(
-      `INSERT INTO iot2 (device, status, status2, status3, status4, status5, suhu, suhu2, suhu3, auto1, auto2, time)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+      `INSERT INTO iot2 (device, status, status2, status3, status4, suhu, suhu2, suhu3, auto1, auto2, time)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
        ON CONFLICT (device) DO UPDATE SET
          status  = EXCLUDED.status,
          status2 = EXCLUDED.status2,
          status3 = EXCLUDED.status3,
          status4 = EXCLUDED.status4,
-         status5 = EXCLUDED.status5,
          suhu    = EXCLUDED.suhu,
          suhu2   = EXCLUDED.suhu2,
          suhu3   = EXCLUDED.suhu3,
@@ -150,7 +151,7 @@ app.post('/api/data', requireDeviceCode, async (req, res) => {
        RETURNING *`,
       [
         device,
-        merged.status, merged.status2, merged.status3, merged.status4, merged.status5,
+        merged.status, merged.status2, merged.status3, merged.status4,
         merged.suhu, merged.suhu2, merged.suhu3,
         merged.auto1, merged.auto2,
       ]
@@ -176,13 +177,15 @@ app.post('/api/data', requireDeviceCode, async (req, res) => {
 // ---------------------------------------------------------------
 app.post('/api/heartbeat', async (req, res) => {
   try {
-    const { device, suhu, suhu2, suhu3, cuaca, status, status2 } = req.body;
+    const { device, suhu, suhu2, suhu3, cuaca, status, status2, status_pir, status_dor_win } = req.body;
     if (!device) {
       return res.status(400).json({ error: 'Field "device" wajib diisi' });
     }
 
     // status / status2 opsional: dipakai ESP melapor kondisi relay setelah jadwal auto berjalan
     // (tidak lewat /api/data lagi, karena /api/data sekarang butuh kode aktivasi milik pelanggan).
+    // status_pir / status_dor_win: pembacaan sensor PIR (gerak) & pintu/jendela -- KHUSUS dilaporkan
+    // oleh ESP di sini, tidak bisa diubah dari app (bukan relay).
     const onOff = (v) => (v === 'ON' || v === 'OFF' ? v : null);
 
     // Field yang tidak dikirim ESP (mis. laporan relay saja dari jadwal auto, tanpa suhu/cuaca)
@@ -197,8 +200,9 @@ app.post('/api/heartbeat', async (req, res) => {
     const cuacaVal = cuaca !== undefined ? String(cuaca) : (before.cuaca ?? '-');
 
     const result = await pool.query(
-      `INSERT INTO iot2 (device, status, status2, suhu, suhu2, suhu3, cuaca, last_heartbeat)
-       VALUES ($1, COALESCE($2::varchar, 'OFF'), COALESCE($3::varchar, 'OFF'), $4, $5, $6, $7, NOW())
+      `INSERT INTO iot2 (device, status, status2, suhu, suhu2, suhu3, cuaca, status_pir, status_dor_win, last_heartbeat)
+       VALUES ($1, COALESCE($2::varchar, 'OFF'), COALESCE($3::varchar, 'OFF'), $4, $5, $6, $7,
+               COALESCE($8::varchar, 'OFF'), COALESCE($9::varchar, 'OFF'), NOW())
        ON CONFLICT (device) DO UPDATE SET
          status  = COALESCE($2::varchar, iot2.status),
          status2 = COALESCE($3::varchar, iot2.status2),
@@ -206,9 +210,11 @@ app.post('/api/heartbeat', async (req, res) => {
          suhu2 = COALESCE(EXCLUDED.suhu2, iot2.suhu2),
          suhu3 = COALESCE(EXCLUDED.suhu3, iot2.suhu3),
          cuaca = COALESCE(EXCLUDED.cuaca, iot2.cuaca),
+         status_pir     = COALESCE($8::varchar, iot2.status_pir),
+         status_dor_win = COALESCE($9::varchar, iot2.status_dor_win),
          last_heartbeat = NOW()
        RETURNING *`,
-      [device, onOff(status), onOff(status2), suhuVal, suhu2Val, suhu3Val, cuacaVal]
+      [device, onOff(status), onOff(status2), suhuVal, suhu2Val, suhu3Val, cuacaVal, onOff(status_pir), onOff(status_dor_win)]
     );
 
     // Tidak mengembalikan data device ke pemanggil (endpoint ini tanpa kode aktivasi)

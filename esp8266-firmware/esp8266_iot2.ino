@@ -340,7 +340,7 @@ void connectMqtt() {
 
 // Kirim heartbeat ke backend Vercel -- kasih tahu "saya masih hidup", SEKALIAN
 // kirim data suhu (dummy/simulasi, karena ESP-01 sudah tidak punya pin sensor lagi).
-// Field relay (status..status5) TIDAK ikut dikirim -- backend otomatis mempertahankan
+// Field relay (status..status4) TIDAK ikut dikirim -- backend otomatis mempertahankan
 // nilai lama untuk itu, cuma suhu & last_heartbeat yang ter-refresh.
 void sendHeartbeat() {
   if (WiFi.status() != WL_CONNECTED) {
@@ -376,12 +376,20 @@ void sendHeartbeat() {
   const char* cuacaOptions[] = { "Cerah", "Hujan", "Mendung" };
   const char* cuaca = cuacaOptions[random(0, 3)];
 
-  StaticJsonDocument<256> doc;
+  // Sensor PIR (gerak) & pintu/jendela -- DUMMY ACAK dulu (belum pasang sensor fisik).
+  // Kalau nanti sudah pasang sensor asli, ganti dua baris ini dengan pembacaan pin GPIO
+  // (mis. digitalRead(PIR_PIN) == HIGH -> "ON"), tidak perlu ubah apa pun di backend/app.
+  const char* pirDummy    = random(0, 10) < 2 ? "ON" : "OFF"; // ~20% peluang "ada gerak"
+  const char* doorWinDummy = random(0, 10) < 3 ? "ON" : "OFF"; // ~30% peluang "terbuka"
+
+  StaticJsonDocument<320> doc; // dinaikkan sedikit karena field bertambah (status_pir, status_dor_win)
   doc["device"] = deviceName;
   doc["suhu"] = suhuText1;
   doc["suhu2"] = suhuText2;
   doc["suhu3"] = suhuText3;
   doc["cuaca"] = cuaca;
+  doc["status_pir"] = pirDummy;
+  doc["status_dor_win"] = doorWinDummy;
 
   String payload;
   serializeJson(doc, payload);

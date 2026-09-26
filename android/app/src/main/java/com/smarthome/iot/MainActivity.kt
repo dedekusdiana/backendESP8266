@@ -28,6 +28,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var relayAdapter: RelayAdapter
     private lateinit var autoAdapter: AutoAdapter
+    private lateinit var sensorAdapter: SensorAdapter
 
     private var deviceNames: List<String> = emptyList()
     private var selectedDevice: String? = null
@@ -64,6 +65,10 @@ class MainActivity : AppCompatActivity() {
         )
         binding.autoRecyclerView.layoutManager = LinearLayoutManager(this)
         binding.autoRecyclerView.adapter = autoAdapter
+
+        sensorAdapter = SensorAdapter()
+        binding.sensorRecyclerView.layoutManager = LinearLayoutManager(this)
+        binding.sensorRecyclerView.adapter = sensorAdapter
 
         binding.relayRecyclerView.layoutManager = LinearLayoutManager(this)
         binding.relayRecyclerView.adapter = relayAdapter
@@ -375,5 +380,6 @@ class MainActivity : AppCompatActivity() {
 
         relayAdapter.submitStatus(device, item, isOnline)
         autoAdapter.submitStatus(device, item, isOnline)
+        sensorAdapter.submitStatus(item)
     }
 }

@@ -26,52 +26,46 @@ Tabel `iot2` — **1 baris per device** (di-update terus, bukan nambah baris bar
 |---------------------------------|----------------------------------------------|
 | `id`                            | auto increment                                |
 | `device`                        | nama/ID alat ESP8266, otomatis dari Chip ID mis. `ESP-A1B2C3` (UNIK — 1 baris per device) |
-| `status`..`status5`             | status 5 relay/lampu berbeda: "ON" / "OFF"    |
+| `status`..`status4`             | status 4 relay/lampu berbeda: "ON" / "OFF"    |
+| `status_pir`                     | sensor gerak (PIR): "ON" = ada gerak, "OFF" = aman -- BUKAN relay, read-only, diisi ESP |
+| `status_dor_win`                 | sensor pintu/jendela: "ON" = buka, "OFF" = tutup -- BUKAN relay, read-only, diisi ESP |
 | `suhu`, `suhu2`, `suhu3`        | 3 sensor suhu+kelembaban (teks gabungan, mis. "28.5C, 65%RH") |
-| `notified_offline`               | penanda internal supaya notifikasi offline tidak dikirim berkali-kali (jangan diubah manual) |
 | `auto1`, `auto2`                | jadwal lampu otomatis, format `"ON,18:00,06:00"` (aktif/nonaktif, jam nyala, jam mati — WIB) |
 | `cuaca`                         | status cuaca: "Cerah" / "Hujan" / "Mendung"   |
 | `last_heartbeat`                | waktu heartbeat TERAKHIR dari ESP (dipakai hitung online/offline) |
 | `time`                          | otomatis diisi server tiap kali baris ini di-update |
 
-## Fitur NOTIFIKASI PUSH
+## Fitur SENSOR (PIR & Pintu/Jendela) -- read-only
 
-App menerima notifikasi otomatis (walau ditutup) untuk:
-- Relay menyala/mati, baik ditekan manual maupun oleh jadwal Auto
-- Device offline (dicek tiap 5 menit lewat Vercel Cron), dan saat device online kembali
+Dua kartu baru di app, di BAWAH Kontrol Relay, tanpa tombol apa pun (cuma menampilkan status):
+- **Sensor Gerak (PIR)** — tampil "Ada Gerak" (merah) / "Aman" (hijau)
+- **Pintu / Jendela** — tampil "Buka" (merah) / "Tutup" (hijau)
 
-**Cara kerja:** setiap kejadian dikirim ke *topic* Firebase bernama `device_<nama device>`. HP
-subscribe ke topic itu otomatis saat pelanggan menambahkan device lewat tombol **+** (lihat
-`DeviceStore.kt`), dan berhenti (unsubscribe) saat device dihapus dari app. Tidak ada token per HP
-yang disimpan di database — jadi kalau 2 HP menambahkan device yang sama, keduanya dapat notifikasi.
+Beda dari relay: ini **bukan sesuatu yang bisa dinyalakan dari app**. Nilainya cuma laporan dari
+ESP lewat `POST /api/heartbeat` (field `status_pir` dan `status_dor_win`, isinya tetap teks
+"ON"/"OFF" di database, app yang menerjemahkan jadi teks Indonesia + warna).
 
-### Setup (sekali saja)
+**Status sekarang: DUMMY.** Firmware belum tersambung ke sensor fisik apa pun — nilainya diacak
+setiap heartbeat (~20% "ada gerak", ~30% "terbuka"), cuma untuk mengetes tampilannya dulu.
 
-1. Buka [Firebase Console](https://console.firebase.google.com) → buat project baru (gratis).
-2. **Tambah app Android**: applicationId `com.smarthome.iot` → download `google-services.json` →
-   taruh di `android/app/google-services.json` (lihat `google-services.json.CONTOH` di folder itu).
-3. **Buat Service Account**: Project Settings → Service accounts → Generate new private key →
-   sebuah file `.json` terdownload.
-4. Isi environment variable di Vercel: `FIREBASE_SERVICE_ACCOUNT_JSON` = **seluruh isi** file itu,
-   ditempel sebagai satu baris teks (boleh langsung tempel isi file JSON-nya apa adanya).
-5. Redeploy backend, lalu build ulang APK (karena ada dependency & permission baru).
-6. Di HP: saat pertama buka app akan diminta izin notifikasi (Android 13 ke atas) — pilih Izinkan.
+**Kalau nanti mau pasang sensor asli** (mis. HC-SR501 untuk PIR, magnetic reed switch untuk
+pintu/jendela): di firmware, cari fungsi `sendHeartbeat()`, ganti baris `pirDummy` dan
+`doorWinDummy` dengan pembacaan pin GPIO sungguhan, misalnya:
+```cpp
+const char* pirDummy = digitalRead(PIR_PIN) == HIGH ? "ON" : "OFF";
+```
+Tidak perlu ubah apa pun di backend atau app untuk itu.
 
-Tanpa langkah di atas, semua fitur lain (relay, auto, suhu, cuaca) tetap berjalan normal —
-notifikasi hanya dilewati diam-diam kalau `FIREBASE_SERVICE_ACCOUNT_JSON` belum diisi.
-
-### Jadwal cron (deteksi offline)
-
-`vercel.json` sudah berisi jadwal yang memanggil `/api/cron/check-offline` tiap 5 menit (Vercel
-Cron aktif otomatis di paket Hobby/Free, tidak perlu setup tambahan). Ambang offline memakai
-`OFFLINE_THRESHOLD_SECONDS` yang sama dengan yang menentukan status_device di app.
+**Catatan:** Relay 5 (`status5`) sudah tidak dipakai lagi di app maupun backend (diganti sensor di
+atas). Kolom `status5` di database dibiarkan apa adanya, tidak mengganggu apa pun.
 
 ## Fitur AUTO (jadwal nyala/mati lampu)
 
 Menu **AUTO** di app (di atas Kontrol Relay) mengatur jadwal otomatis:
-- **Auto 1 → Relay 1** (mis. lampu teras), **Auto 2 → Relay 2** (mis. lampu taman). Kartu diberi
-  judul "Auto 1" / "Auto 2" dan punya indikator lampu: ● Menyala (hijau) / ● Mati (abu-abu),
-  diambil dari status relay yang dikendalikan.
+- **Auto 1 → Relay 1** (mis. lampu teras), **Auto 2 → Relay 2** (mis. lampu taman). Judul kartu
+  berformat "Auto 1 (nama relay)" — nama relay ikut berubah otomatis kalau relay-nya di-rename
+  di menu Kontrol Relay. Ada juga indikator lampu: ● Menyala (hijau) / ● Mati (abu-abu), diambil
+  dari status relay yang dikendalikan.
 - Tiap kartu punya switch aktif/nonaktif + tombol **Nyala** dan **Mati** (pilih jam & menit).
   Jadwal boleh melewati tengah malam (mis. nyala 18:00, mati 06:00).
 - Jadwal disimpan di kolom `auto1` / `auto2` (format `"ON,18:00,06:00"`), dikirim ke ESP lewat
@@ -136,7 +130,7 @@ Akses per device memakai **kode aktivasi** (header `X-Device-Code`). Lihat bagia
 
 - `POST /api/claim` — `{"device":"ESP-A1B2C3","code":"ABCDE-FGHJK"}`, dipakai app saat pelanggan
   menambahkan device. Kode salah → 403.
-- `POST /api/data` 🔒 — kirim `{"device":"...", ...field yang mau diubah}` (relay `status`..`status5`,
+- `POST /api/data` 🔒 — kirim `{"device":"...", ...field yang mau diubah}` (relay `status`..`status4`,
   jadwal `auto1`/`auto2`). Bisa sebagian field saja. Setelah tersimpan, backend publish ke MQTT
   topic `smarthome/<device>/status`. Butuh header `X-Device-Code`.
 - `GET /api/status/:device` 🔒 — baris terakhir satu device (semua kolom + `status_device`).

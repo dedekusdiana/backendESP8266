@@ -69,7 +69,11 @@ ALTER TABLE iot2
   ADD COLUMN IF NOT EXISTS auto2 VARCHAR(20) NOT NULL DEFAULT 'OFF,18:00,06:00';
 
 -- ============================================================
--- Fitur NOTIFIKASI PUSH (deteksi offline, dipakai GET /api/cron/check-offline)
+-- Fitur SENSOR: PIR (gerak) & Pintu/Jendela
+-- Ini BUKAN relay -- tidak ada tombol ON/OFF dari app, cuma laporan dari ESP (lewat
+-- POST /api/heartbeat). status5 (relay ke-5, TIDAK DIPAKAI LAGI) dibiarkan apa adanya
+-- di database (aman, tidak mengganggu), cukup diabaikan oleh backend & app.
 -- ============================================================
 ALTER TABLE iot2
-  ADD COLUMN IF NOT EXISTS notified_offline BOOLEAN NOT NULL DEFAULT FALSE;
+  ADD COLUMN IF NOT EXISTS status_pir     VARCHAR(20) NOT NULL DEFAULT 'OFF', -- ON = ada gerak, OFF = aman
+  ADD COLUMN IF NOT EXISTS status_dor_win VARCHAR(20) NOT NULL DEFAULT 'OFF'; -- ON = buka, OFF = tutup
