@@ -104,14 +104,13 @@
                     android:layout_marginTop="8dp">
 
                     <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/cardDatabaseStatus"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:layout_margin="3dp"
                         app:cardCornerRadius="14dp"
                         app:cardElevation="0dp"
-                        android:id="@+id/cardDatabaseStatus"
-                        android:id="@+id/cardDeviceStatus"
                         app:cardBackgroundColor="@color/statusCardBg">
 
                         <LinearLayout
@@ -171,6 +170,7 @@
                     </com.google.android.material.card.MaterialCardView>
 
                     <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/cardDeviceStatus"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
@@ -246,84 +246,82 @@
                     android:layout_marginHorizontal="16dp"
                     android:layout_marginVertical="8dp">
 
-                <FrameLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1">
-
-                    <com.google.android.material.card.MaterialCardView
-                        android:layout_width="match_parent"
+                    <FrameLayout
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        app:cardCornerRadius="14dp"
-                        app:cardElevation="0dp"
-                        app:strokeWidth="1dp"
-                        app:strokeColor="@color/dividerLine"
-                        app:cardBackgroundColor="@color/cardBackground">
+                        android:layout_weight="1">
 
-                        <LinearLayout
+                        <com.google.android.material.card.MaterialCardView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:orientation="horizontal"
-                            android:gravity="center_vertical"
-                            android:padding="10dp">
-
-                            <TextView
-                                android:layout_width="38dp"
-                                android:layout_height="38dp"
-                                android:layout_marginEnd="12dp"
-                                android:background="@drawable/bg_icon_circle"
-                                android:backgroundTint="#E3E9F0"
-                                android:gravity="center"
-                                android:text="\uD83D\uDDA5\uFE0F"
-                                android:textSize="16sp" />
+                            app:cardCornerRadius="14dp"
+                            app:cardElevation="0dp"
+                            app:strokeWidth="1dp"
+                            app:strokeColor="@color/dividerLine"
+                            app:cardBackgroundColor="@color/cardBackground">
 
                             <LinearLayout
-                                android:layout_width="0dp"
+                                android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:orientation="vertical">
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical"
+                                android:padding="10dp">
 
                                 <TextView
-                                    android:layout_width="match_parent"
+                                    android:layout_width="38dp"
+                                    android:layout_height="38dp"
+                                    android:layout_marginEnd="12dp"
+                                    android:background="@drawable/bg_icon_circle"
+                                    android:backgroundTint="#E3E9F0"
+                                    android:gravity="center"
+                                    android:text="\uD83D\uDDA5\uFE0F"
+                                    android:textSize="16sp" />
+
+                                <LinearLayout
+                                    android:layout_width="0dp"
                                     android:layout_height="wrap_content"
-                                    android:text="DEVICE"
-                                    android:textSize="10sp"
-                                    android:letterSpacing="0.05"
-                                    android:textColor="@color/mutedText"
-                                    android:textStyle="bold" />
+                                    android:layout_weight="1"
+                                    android:orientation="vertical">
+
+                                    <TextView
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:text="DEVICE"
+                                        android:textSize="10sp"
+                                        android:letterSpacing="0.05"
+                                        android:textColor="@color/mutedText"
+                                        android:textStyle="bold" />
+
+                                    <TextView
+                                        android:id="@+id/tvSelectedDeviceName"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:layout_marginTop="2dp"
+                                        android:textSize="16sp"
+                                        android:textStyle="bold"
+                                        android:textColor="@color/darkNavy"
+                                        tools:text="ESP01_01" />
+
+                                </LinearLayout>
 
                                 <TextView
-                                    android:id="@+id/tvSelectedDeviceName"
-                                    android:layout_width="match_parent"
+                                    android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:layout_marginTop="2dp"
-                                    android:textSize="16sp"
-                                    android:textStyle="bold"
-                                    android:textColor="@color/darkNavy"
-                                    tools:text="ESP01_01" />
+                                    android:text="\u25BE"
+                                    android:textSize="18sp"
+                                    android:textColor="@color/mutedText" />
 
                             </LinearLayout>
+                        </com.google.android.material.card.MaterialCardView>
 
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="\u25BE"
-                                android:textSize="18sp"
-                                android:textColor="@color/mutedText" />
+                        <Spinner
+                            android:id="@+id/deviceSpinner"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:background="@android:color/transparent"
+                            android:alpha="0" />
 
-                        </LinearLayout>
-                    </com.google.android.material.card.MaterialCardView>
-
-                    <!-- Spinner transparan, ditumpuk di atas card supaya tampilan custom
-                         tapi tetap pakai perilaku dropdown Spinner bawaan Android -->
-                    <Spinner
-                        android:id="@+id/deviceSpinner"
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:background="@android:color/transparent"
-                        android:alpha="0" />
-
-                </FrameLayout>
+                    </FrameLayout>
 
                     <ImageButton
                         android:id="@+id/btnAddDevice"
@@ -346,7 +344,7 @@
 
                 </LinearLayout>
 
-                <!-- Ringkasan rumah: UI-only, memakai data status yang sudah ada -->
+                <!-- Ringkasan rumah -->
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/cardDashboardSummary"
                     android:layout_width="match_parent"
@@ -382,41 +380,103 @@
                             android:orientation="horizontal">
 
                             <LinearLayout
-                                android:layout_width="0dp" android:layout_height="wrap_content"
-                                android:layout_weight="1" android:orientation="vertical">
-                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                                    android:text="💡 Lampu" android:textSize="11sp" android:textColor="@color/mutedText"/>
-                                <TextView android:id="@+id/tvDashLights" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                                    android:layout_marginTop="1dp" android:text="0 / 4 OFF" android:textSize="14sp" android:textStyle="bold" android:textColor="@color/darkNavy"/>
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="💡 Lampu"
+                                    android:textSize="11sp"
+                                    android:textColor="@color/mutedText"/>
+
+                                <TextView
+                                    android:id="@+id/tvDashLights"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="1dp"
+                                    android:text="0 / 4 OFF"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold"
+                                    android:textColor="@color/darkNavy"/>
                             </LinearLayout>
 
                             <LinearLayout
-                                android:layout_width="0dp" android:layout_height="wrap_content"
-                                android:layout_weight="1" android:orientation="vertical">
-                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                                    android:text="🌡 Suhu" android:textSize="11sp" android:textColor="@color/mutedText"/>
-                                <TextView android:id="@+id/tvDashTemp" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                                    android:layout_marginTop="1dp" android:text="--°C" android:textSize="14sp" android:textStyle="bold" android:textColor="@color/darkNavy"/>
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="🌡 Suhu"
+                                    android:textSize="11sp"
+                                    android:textColor="@color/mutedText"/>
+
+                                <TextView
+                                    android:id="@+id/tvDashTemp"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="1dp"
+                                    android:text="--°C"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold"
+                                    android:textColor="@color/darkNavy"/>
                             </LinearLayout>
 
                             <LinearLayout
-                                android:layout_width="0dp" android:layout_height="wrap_content"
-                                android:layout_weight="1" android:orientation="vertical">
-                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                                    android:text="🚪 Pintu" android:textSize="11sp" android:textColor="@color/mutedText"/>
-                                <TextView android:id="@+id/tvDashDoor" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                                    android:layout_marginTop="1dp" android:text="Tutup" android:textSize="14sp" android:textStyle="bold" android:textColor="@color/darkNavy"/>
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="🚪 Pintu"
+                                    android:textSize="11sp"
+                                    android:textColor="@color/mutedText"/>
+
+                                <TextView
+                                    android:id="@+id/tvDashDoor"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="1dp"
+                                    android:text="Tutup"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold"
+                                    android:textColor="@color/darkNavy"/>
                             </LinearLayout>
 
                             <LinearLayout
-                                android:layout_width="0dp" android:layout_height="wrap_content"
-                                android:layout_weight="1" android:orientation="vertical">
-                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                                    android:text="👤 Gerak" android:textSize="11sp" android:textColor="@color/mutedText"/>
-                                <TextView android:id="@+id/tvDashPir" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                                    android:layout_marginTop="1dp" android:text="Aman" android:textSize="14sp" android:textStyle="bold" android:textColor="@color/darkNavy"/>
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="👤 Gerak"
+                                    android:textSize="11sp"
+                                    android:textColor="@color/mutedText"/>
+
+                                <TextView
+                                    android:id="@+id/tvDashPir"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="1dp"
+                                    android:text="Aman"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold"
+                                    android:textColor="@color/darkNavy"/>
                             </LinearLayout>
+
                         </LinearLayout>
+
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
@@ -507,13 +567,13 @@
                         android:padding="10dp">
 
                         <TextView
+                            android:id="@+id/tvCuacaIcon"
                             android:layout_width="38dp"
                             android:layout_height="38dp"
                             android:layout_marginEnd="10dp"
                             android:background="@drawable/bg_icon_circle"
                             android:backgroundTint="@color/iconCircleBlue"
                             android:gravity="center"
-                            android:id="@+id/tvCuacaIcon"
                             android:textSize="17sp"
                             tools:text="\u2600\uFE0F" />
 
@@ -550,138 +610,14 @@
 
                         </LinearLayout>
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="\u203A"
-                            android:textSize="18sp"
-                            android:textColor="@color/mutedText" />
-
                     </LinearLayout>
+
                 </com.google.android.material.card.MaterialCardView>
-
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/sensorRecyclerView"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:nestedScrollingEnabled="false" />
-
-                <!-- Auto (jadwal lampu) -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:layout_marginHorizontal="20dp"
-                    android:layout_marginTop="10dp"
-                    android:layout_marginBottom="4dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="\u23F0"
-                        android:textSize="14sp"
-                        android:layout_marginEnd="6dp" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="AUTO (JADWAL LAMPU)"
-                        android:textSize="11sp"
-                        android:letterSpacing="0.05"
-                        android:textColor="@color/mutedText"
-                        android:textStyle="bold" />
-
-                    <View
-                        android:layout_width="0dp"
-                        android:layout_height="1dp"
-                        android:layout_weight="1"
-                        android:layout_marginStart="10dp"
-                        android:background="@color/dividerLine" />
-
-                </LinearLayout>
-
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/autoRecyclerView"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:nestedScrollingEnabled="false" />
-
-                <!-- Relay list -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:layout_marginHorizontal="20dp"
-                    android:layout_marginTop="10dp"
-                    android:layout_marginBottom="4dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="\u2699\uFE0F"
-                        android:textSize="14sp"
-                        android:layout_marginEnd="6dp" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="KONTROL RELAY"
-                        android:textSize="11sp"
-                        android:letterSpacing="0.05"
-                        android:textColor="@color/mutedText"
-                        android:textStyle="bold" />
-
-                    <View
-                        android:layout_width="0dp"
-                        android:layout_height="1dp"
-                        android:layout_weight="1"
-                        android:layout_marginStart="10dp"
-                        android:background="@color/dividerLine" />
-
-                </LinearLayout>
-
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/relayRecyclerView"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:nestedScrollingEnabled="false" />
-
-                <TextView
-                    android:id="@+id/tvLastUpdate"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center"
-                    android:paddingTop="10dp"
-                    android:textSize="12sp"
-                    android:textColor="@color/mutedText"
-                    tools:text="Update terakhir: 17 Sep 2026, 16:12:38 WIB" />
-
-                <TextView
-                    android:id="@+id/tvConnectionInfo"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center"
-                    android:paddingHorizontal="16dp"
-                    android:paddingTop="4dp"
-                    android:textSize="12sp"
-                    android:textColor="@color/mutedText"
-                    tools:text="Terhubung ke server" />
 
             </LinearLayout>
 
         </androidx.core.widget.NestedScrollView>
 
     </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
-
-    <ProgressBar
-        android:id="@+id/progressBar"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        app:layout_anchor="@id/swipeRefresh"
-        app:layout_anchorGravity="center"
-        android:visibility="gone" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
