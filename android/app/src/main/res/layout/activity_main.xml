@@ -110,6 +110,8 @@
                         android:layout_margin="3dp"
                         app:cardCornerRadius="14dp"
                         app:cardElevation="0dp"
+                        android:id="@+id/cardDatabaseStatus"
+                        android:id="@+id/cardDeviceStatus"
                         app:cardBackgroundColor="@color/statusCardBg">
 
                         <LinearLayout
@@ -146,11 +148,14 @@
 
                                 <TextView
                                     android:id="@+id/tvDatabaseStatus"
-                                    android:layout_width="match_parent"
+                                    android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="2dp"
-                                    android:textSize="14sp"
+                                    android:textSize="13sp"
                                     android:textStyle="bold"
+                                    android:paddingHorizontal="8dp"
+                                    android:paddingVertical="3dp"
+                                    android:background="@drawable/bg_pill"
                                     tools:text="\u25CF Connected" />
 
                             </LinearLayout>
@@ -208,11 +213,14 @@
 
                                 <TextView
                                     android:id="@+id/tvDeviceStatus"
-                                    android:layout_width="match_parent"
+                                    android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="2dp"
-                                    android:textSize="14sp"
+                                    android:textSize="13sp"
                                     android:textStyle="bold"
+                                    android:paddingHorizontal="8dp"
+                                    android:paddingVertical="3dp"
+                                    android:background="@drawable/bg_pill"
                                     tools:text="\u25CF Online" />
 
                             </LinearLayout>
@@ -337,6 +345,80 @@
                         app:tint="@color/mutedText" />
 
                 </LinearLayout>
+
+                <!-- Ringkasan rumah: UI-only, memakai data status yang sudah ada -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardDashboardSummary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="16dp"
+                    android:layout_marginTop="2dp"
+                    android:layout_marginBottom="4dp"
+                    app:cardCornerRadius="16dp"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="1dp"
+                    app:strokeColor="@color/dividerLine"
+                    app:cardBackgroundColor="@color/cardBackground">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="10dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="RINGKASAN RUMAH"
+                            android:textSize="10sp"
+                            android:letterSpacing="0.04"
+                            android:textStyle="bold"
+                            android:textColor="@color/mutedText" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="7dp"
+                            android:orientation="horizontal">
+
+                            <LinearLayout
+                                android:layout_width="0dp" android:layout_height="wrap_content"
+                                android:layout_weight="1" android:orientation="vertical">
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                    android:text="💡 Lampu" android:textSize="11sp" android:textColor="@color/mutedText"/>
+                                <TextView android:id="@+id/tvDashLights" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                    android:layout_marginTop="1dp" android:text="0 / 4 OFF" android:textSize="14sp" android:textStyle="bold" android:textColor="@color/darkNavy"/>
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp" android:layout_height="wrap_content"
+                                android:layout_weight="1" android:orientation="vertical">
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                    android:text="🌡 Suhu" android:textSize="11sp" android:textColor="@color/mutedText"/>
+                                <TextView android:id="@+id/tvDashTemp" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                    android:layout_marginTop="1dp" android:text="--°C" android:textSize="14sp" android:textStyle="bold" android:textColor="@color/darkNavy"/>
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp" android:layout_height="wrap_content"
+                                android:layout_weight="1" android:orientation="vertical">
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                    android:text="🚪 Pintu" android:textSize="11sp" android:textColor="@color/mutedText"/>
+                                <TextView android:id="@+id/tvDashDoor" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                    android:layout_marginTop="1dp" android:text="Tutup" android:textSize="14sp" android:textStyle="bold" android:textColor="@color/darkNavy"/>
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp" android:layout_height="wrap_content"
+                                android:layout_weight="1" android:orientation="vertical">
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                    android:text="👤 Gerak" android:textSize="11sp" android:textColor="@color/mutedText"/>
+                                <TextView android:id="@+id/tvDashPir" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                    android:layout_marginTop="1dp" android:text="Aman" android:textSize="14sp" android:textStyle="bold" android:textColor="@color/darkNavy"/>
+                            </LinearLayout>
+                        </LinearLayout>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
 
                 <!-- Suhu -->
                 <LinearLayout

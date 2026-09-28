@@ -152,11 +152,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setDatabaseStatus(connected: Boolean, detail: String? = null) {
+        val color = if (connected) "#2E7D32" else "#D32F2F"
+        val bg = if (connected) "#E8F5E9" else "#FFEBEE"
         binding.tvDatabaseStatus.text = "\u25CF " + if (connected) "Connected" else "Terputus"
-        binding.tvDatabaseStatus.setTextColor(
-            Color.parseColor(if (connected) "#2E7D32" else "#D32F2F")
-        )
+        binding.tvDatabaseStatus.setTextColor(Color.parseColor(color))
+        binding.tvDatabaseStatus.backgroundTintList =
+            android.content.res.ColorStateList.valueOf(Color.parseColor(bg))
         if (detail != null) binding.tvConnectionInfo.text = detail
+    }
+
+    private fun setDeviceStatusVisual(online: Boolean) {
+        val color = if (online) "#2E7D32" else "#D32F2F"
+        val bg = if (online) "#E8F5E9" else "#FFEBEE"
+        binding.tvDeviceStatus.text = "\u25CF " + if (online) "Online" else "Offline"
+        binding.tvDeviceStatus.setTextColor(Color.parseColor(color))
+        binding.tvDeviceStatus.backgroundTintList =
+            android.content.res.ColorStateList.valueOf(Color.parseColor(bg))
     }
 
     /** Pisahkan teks gabungan "26.2C, 70%RH" -> Pair("26.2°C", "70%RH"). */
@@ -302,8 +313,7 @@ class MainActivity : AppCompatActivity() {
                     response.code() == 404 -> {
                         // Kode benar, tapi alat belum pernah online (belum ada heartbeat masuk)
                         setDatabaseStatus(true, "Terhubung ke server")
-                        binding.tvDeviceStatus.text = "\u25CF Offline"
-                        binding.tvDeviceStatus.setTextColor(Color.parseColor("#D32F2F"))
+                        setDeviceStatusVisual(false)
                     }
                     response.code() == 403 -> {
                         if (showSpinner) {
@@ -373,10 +383,20 @@ class MainActivity : AppCompatActivity() {
         }
 
         val isOnline = item.statusDevice.equals("online", ignoreCase = true)
-        binding.tvDeviceStatus.text = "\u25CF " + if (isOnline) "Online" else "Offline"
-        binding.tvDeviceStatus.setTextColor(
-            Color.parseColor(if (isOnline) "#2E7D32" else "#D32F2F")
-        )
+        setDeviceStatusVisual(isOnline)
+
+        // Ringkasan rumah hanya memvisualisasikan data yang sudah diterima aplikasi.
+        val lightKeys = listOf("status", "status2", "status3", "status4")
+        val lightsOn = lightKeys.count { item.valueFor(it).equals("ON", ignoreCase = true) }
+        binding.tvDashLights.text = "$lightsOn / 4 " + if (lightsOn == 1) "ON" else "ON"
+
+        binding.tvDashTemp.text = t1
+        val doorOpen = item.valueForSensor("status_dor_win").equals("ON", ignoreCase = true)
+        val motion = item.valueForSensor("status_pir").equals("ON", ignoreCase = true)
+        binding.tvDashDoor.text = if (doorOpen) "Buka" else "Tutup"
+        binding.tvDashDoor.setTextColor(Color.parseColor(if (doorOpen) "#C62828" else "#2E7D32"))
+        binding.tvDashPir.text = if (motion) "Ada gerak" else "Aman"
+        binding.tvDashPir.setTextColor(Color.parseColor(if (motion) "#C62828" else "#2E7D32"))
 
         relayAdapter.submitStatus(device, item, isOnline)
         autoAdapter.submitStatus(device, item, isOnline)

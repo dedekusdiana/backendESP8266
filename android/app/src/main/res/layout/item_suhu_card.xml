@@ -4,7 +4,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    app:cardCornerRadius="14dp"
+    app:cardCornerRadius="12dp"
     app:cardElevation="0dp"
     app:strokeWidth="1dp"
     app:strokeColor="@color/dividerLine"
@@ -25,11 +25,11 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="10dp">
+            android:padding="8dp">
 
             <TextView
-                android:layout_width="30dp"
-                android:layout_height="30dp"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
                 android:background="@drawable/bg_icon_circle"
                 android:backgroundTint="#DCEBFB"
                 android:gravity="center"
@@ -40,7 +40,7 @@
                 android:id="@+id/tvSuhuTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="5dp"
                 android:text="Suhu"
                 android:textSize="12sp"
                 android:textColor="@color/mutedText"
@@ -58,7 +58,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
                     android:text="--\u00B0C"
-                    android:textSize="19sp"
+                    android:textSize="18sp"
                     android:textStyle="bold"
                     android:textColor="@color/iconCircleBlue" />
 
@@ -80,7 +80,7 @@
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:layout_marginTop="4dp">
+                android:layout_marginTop="2dp">
 
                 <TextView
                     android:layout_width="wrap_content"

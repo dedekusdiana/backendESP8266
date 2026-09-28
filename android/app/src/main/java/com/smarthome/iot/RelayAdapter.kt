@@ -53,6 +53,13 @@ class RelayAdapter(
 
             val isOn = value.equals("ON", ignoreCase = true)
 
+            // Ikon lampu ikut berubah agar status ON/OFF terbaca sekilas.
+            binding.tvRelayIcon.text = if (isOn) "\uD83D\uDCA1" else "\uD83D\uDD0C"
+            binding.tvRelayIcon.backgroundTintList =
+                android.content.res.ColorStateList.valueOf(
+                    Color.parseColor(if (isOn) "#FFF3CD" else "#DCEBFB")
+                )
+
             binding.btnToggleRelay.text = if (isOn) "ON" else "OFF"
             binding.btnToggleRelay.backgroundTintList = android.content.res.ColorStateList.valueOf(
                 Color.parseColor(if (isOn) "#1E88E5" else "#B0BEC5")

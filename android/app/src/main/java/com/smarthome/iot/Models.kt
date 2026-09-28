@@ -9,6 +9,7 @@ data class DeviceStatusItem(
     @SerializedName("status2") val status2: String,
     @SerializedName("status3") val status3: String,
     @SerializedName("status4") val status4: String,
+    @SerializedName("status5") val status5: String,
     @SerializedName("suhu") val suhu: String,
     @SerializedName("suhu2") val suhu2: String,
     @SerializedName("suhu3") val suhu3: String,
@@ -45,6 +46,7 @@ val RELAY_FIELDS = listOf(
     RelayField("Relay 2", "status2"),
     RelayField("Relay 3", "status3"),
     RelayField("Relay 4", "status4"),
+    RelayField("Relay 5", "status5"), // output sensor PIR (menyala otomatis saat ada gerak)
 )
 
 data class SuhuField(val label: String, val jsonKey: String)
@@ -67,6 +69,7 @@ fun DeviceStatusItem.valueFor(jsonKey: String): String = when (jsonKey) {
     "status2" -> status2
     "status3" -> status3
     "status4" -> status4
+    "status5" -> status5
     else -> "OFF"
 }
 

@@ -71,7 +71,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="6dp"
-                        android:textSize="12sp"
+                        android:textSize="11sp"
                         android:textColor="@color/mutedText"
                         tools:text="• Jadwal aktif" />
                 </LinearLayout>

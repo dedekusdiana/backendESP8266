@@ -62,7 +62,14 @@ class AutoAdapter(
                 ColorStateList.valueOf(Color.parseColor(if (lampOn) "#FFE082" else "#ECEFF1"))
             binding.tvAutoIcon.alpha = if (lampOn) 1.0f else 0.6f
 
-            binding.tvAutoSummary.text = if (schedule.enabled) "\u2022 Jadwal aktif" else "\u2022 Jadwal nonaktif"
+            binding.tvAutoSummary.text = if (schedule.enabled) {
+                "\u2022 Jadwal aktif  •  ${schedule.onTime} → ${schedule.offTime}"
+            } else {
+                "\u2022 Jadwal nonaktif  •  ${schedule.onTime} → ${schedule.offTime}"
+            }
+            binding.tvAutoSummary.setTextColor(
+                Color.parseColor(if (schedule.enabled) "#2E7D32" else "#90A4AE")
+            )
 
             binding.btnAutoOn.text = "Nyala  ${schedule.onTime}"
             binding.btnAutoOff.text = "Mati  ${schedule.offTime}"
