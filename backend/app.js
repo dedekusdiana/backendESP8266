@@ -3,7 +3,7 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const mqtt = require('mqtt');
 const { codeMatches, requireDeviceCode, requireAdmin } = require('./auth');
-const { sendTelegram, answerTelegramChat } = require('./telegram');
+const { sendTelegram } = require('./telegram');
 
 const app = express();
 app.use(cors());
@@ -97,100 +97,6 @@ async function publishUpdate(device, payload) {
 // Health check
 app.get('/', (req, res) => {
   res.json({ status: 'ok', service: 'esp8266-iot2-backend' });
-});
-
-// ---------------------------------------------------------------
-// Telegram Bot -- command "cek rumah"
-// Telegram memanggil endpoint ini lewat webhook. Backend membaca status
-// terbaru dari database, lalu membalas ke chat Telegram yang mengirim pesan.
-// Untuk keamanan, hanya TELEGRAM_CHAT_ID yang sudah dikonfigurasi yang boleh
-// menjalankan command.
-// ---------------------------------------------------------------
-function telegramValue(value, fallback = '-') {
-  return value === undefined || value === null || value === '' ? fallback : String(value);
-}
-
-function formatTelegramStatus(row) {
-  const pir = row.status_pir === 'ON' ? '⚠️ ADA GERAK' : '✅ Aman';
-  const door = row.status_dor_win === 'ON' ? '⚠️ TERBUKA' : '🔒 Tertutup';
-  const relay = [
-    ['Relay 1', row.status],
-    ['Relay 2', row.status2],
-    ['Relay 3', row.status3],
-    ['Relay 4', row.status4],
-  ].map(([name, value]) => `   ${name} : ${telegramValue(value, 'OFF')}`).join('\n');
-
-  const deviceStatus = withDeviceStatus(row).status_device;
-  const onlineText = deviceStatus === 'online' ? '🟢 Online' : '🔴 Offline';
-
-  return [
-    '🏠 STATUS RUMAH',
-    '',
-    '🚶 Sensor Gerak',
-    `   ${pir}`,
-    '',
-    '🚪 Pintu / Jendela',
-    `   ${door}`,
-    '',
-    '🌤️ Cuaca',
-    `   ${telegramValue(row.cuaca)}`,
-    '',
-    '💡 Relay',
-    relay,
-    '',
-    '🌡️ Suhu',
-    `   Sensor 1 : ${telegramValue(row.suhu, '0')}`,
-    `   Sensor 2 : ${telegramValue(row.suhu2, '0')}`,
-    `   Sensor 3 : ${telegramValue(row.suhu3, '0')}`,
-    '',
-    '📡 Device',
-    `   ${telegramValue(row.device)}`,
-    `   ${onlineText}`,
-  ].join('\n');
-}
-
-app.post('/api/telegram', async (req, res) => {
-  try {
-    const update = req.body || {};
-    const message = update.message;
-    const chatId = message?.chat?.id;
-    const text = typeof message?.text === 'string' ? message.text.trim().toLowerCase() : '';
-
-    // Telegram perlu menerima HTTP 200 agar webhook tidak terus mengulang update.
-    if (!chatId || !message) return res.json({ ok: true });
-
-    const configuredChatId = String(process.env.TELEGRAM_CHAT_ID || '');
-    if (!configuredChatId || String(chatId) !== configuredChatId) {
-      console.warn('Telegram command ditolak: chat ID tidak terdaftar', chatId);
-      return res.json({ ok: true });
-    }
-
-    if (text !== 'cek rumah') {
-      await answerTelegramChat(chatId, 'Perintah belum tersedia. Coba kirim: cek rumah');
-      return res.json({ ok: true });
-    }
-
-    // Kalau TELEGRAM_DEVICE_ID diisi, gunakan device tersebut.
-    // Kalau kosong, otomatis ambil device dengan heartbeat terbaru.
-    const deviceId = process.env.TELEGRAM_DEVICE_ID;
-    const query = deviceId
-      ? `SELECT * FROM iot2 WHERE device = $1 ORDER BY time DESC LIMIT 1`
-      : `SELECT * FROM iot2 ORDER BY last_heartbeat DESC NULLS LAST, time DESC LIMIT 1`;
-    const params = deviceId ? [deviceId] : [];
-    const result = await pool.query(query, params);
-
-    if (result.rows.length === 0) {
-      await answerTelegramChat(chatId, '🏠 STATUS RUMAH\n\nBelum ada data dari device. Pastikan ESP sudah online dan mengirim heartbeat.');
-      return res.json({ ok: true });
-    }
-
-    await answerTelegramChat(chatId, formatTelegramStatus(result.rows[0]));
-    return res.json({ ok: true });
-  } catch (err) {
-    console.error('Error in POST /api/telegram:', err);
-    // Jangan membuat Telegram retry tanpa batas karena error database/server.
-    return res.status(200).json({ ok: true });
-  }
 });
 
 // ---------------------------------------------------------------

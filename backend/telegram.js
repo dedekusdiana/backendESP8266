@@ -7,9 +7,9 @@
 //      https://api.telegram.org/bot<TOKEN>/getUpdates -> cari "chat":{"id": ...} -> TELEGRAM_CHAT_ID
 //   3. Isi keduanya di Environment Variables Vercel, lalu redeploy.
 
-async function sendTelegram(text, chatIdOverride = null) {
+async function sendTelegram(text) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = chatIdOverride || process.env.TELEGRAM_CHAT_ID;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
   if (!token || !chatId) return; // belum dikonfigurasi -> dilewati diam-diam, fitur lain tetap jalan
 
   try {
@@ -27,9 +27,4 @@ async function sendTelegram(text, chatIdOverride = null) {
   }
 }
 
-
-async function answerTelegramChat(chatId, text) {
-  return sendTelegram(text, chatId);
-}
-
-module.exports = { sendTelegram, answerTelegramChat };
+module.exports = { sendTelegram };
