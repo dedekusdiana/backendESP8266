@@ -3,7 +3,7 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const mqtt = require('mqtt');
 const { codeMatches, requireDeviceCode, requireAdmin } = require('./auth');
-const { sendTelegram } = require('./telegram');
+const { sendTelegram, formatStatusMessage } = require('./telegram');
 
 const app = express();
 app.use(cors());
@@ -269,6 +269,47 @@ app.post('/api/heartbeat', async (req, res) => {
   } catch (err) {
     console.error('Error in POST /api/heartbeat:', err);
     res.status(500).json({ error: 'Gagal menyimpan heartbeat' });
+  }
+});
+
+// ---------------------------------------------------------------
+// POST /api/telegram/webhook
+// Dipanggil Telegram setiap ada chat masuk ke bot. Kalau pesannya "cek rumah"
+// (atau /cek, /status), bot membalas status keseluruhan semua device.
+// Keamanan:
+//   - header X-Telegram-Bot-Api-Secret-Token harus cocok dengan TELEGRAM_WEBHOOK_SECRET (kalau diisi)
+//   - hanya chat dengan id = TELEGRAM_CHAT_ID yang dilayani, chat lain diabaikan diam-diam
+// Selalu balas 200 ke Telegram (kalau tidak, Telegram akan mengirim ulang pesan yang sama).
+// ---------------------------------------------------------------
+app.post('/api/telegram/webhook', async (req, res) => {
+  try {
+    const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
+    if (secret && req.get('X-Telegram-Bot-Api-Secret-Token') !== secret) {
+      return res.sendStatus(403);
+    }
+
+    const msg = req.body && req.body.message;
+    const chatId = msg && msg.chat ? String(msg.chat.id) : null;
+    if (!chatId || chatId !== String(process.env.TELEGRAM_CHAT_ID || '')) {
+      return res.sendStatus(200); // bukan chat pemilik -> abaikan
+    }
+
+    // Normalisasi: huruf kecil, buang "@namabot" (di grup perintah bisa jadi "/cek@namabot"), rapikan spasi
+    const text = String(msg.text || '').toLowerCase().replace(/@\w+/g, '').replace(/\s+/g, ' ').trim();
+    const isStatusCommand = text.includes('cek rumah') || text === '/cek' || text === '/status' || text === '/cekrumah';
+
+    if (isStatusCommand) {
+      const { rows } = await pool.query(
+        `SELECT DISTINCT ON (device) * FROM iot2 ORDER BY device, time DESC`
+      );
+      // WAJIB di-await: di Vercel (serverless), proses bisa dibekukan begitu response dikirim
+      await sendTelegram(formatStatusMessage(rows.map(withDeviceStatus)), chatId);
+    }
+
+    res.sendStatus(200);
+  } catch (err) {
+    console.error('Error in POST /api/telegram/webhook:', err);
+    res.sendStatus(200);
   }
 });
 
