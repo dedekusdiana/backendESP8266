@@ -3,6 +3,7 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const mqtt = require('mqtt');
 const { codeMatches, requireDeviceCode, requireAdmin } = require('./auth');
+const { sendTelegram } = require('./telegram');
 
 const app = express();
 app.use(cors());
@@ -32,6 +33,10 @@ function withDeviceStatus(row) {
 
 // Kolom relay (ON/OFF) dan sensor suhu yang didukung tabel iot2.
 const STATUS_FIELDS = ['status', 'status2', 'status3', 'status4', 'status5']; // status5 = relay output PIR (ESP32)
+// Dinotifikasi ke Telegram cuma relay yang dinyalakan manusia -- status5 (output PIR) SENGAJA
+// dikecualikan, karena bisa berubah tiap ada gerak dan akan membanjiri chat dengan notifikasi.
+const NOTIFY_RELAY_FIELDS = ['status', 'status2', 'status3', 'status4'];
+const RELAY_LABELS = { status: 'Relay 1', status2: 'Relay 2', status3: 'Relay 3', status4: 'Relay 4' };
 // Sensor (bukan relay -- tidak bisa dinyalakan/dimatikan dari app, cuma laporan dari ESP lewat /api/heartbeat)
 const SENSOR_FIELDS = ['status_pir', 'status_dor_win'];
 const SUHU_FIELDS = ['suhu', 'suhu2', 'suhu3'];
@@ -163,6 +168,15 @@ app.post('/api/data', requireDeviceCode, async (req, res) => {
     // Publish ke HiveMQ (best-effort, tidak memblokir response kalau gagal)
     await publishUpdate(device, mqttPayload(savedRow));
 
+    // Notifikasi Telegram kalau ada relay (manual, bukan output PIR) yang benar-benar berubah
+    for (const field of NOTIFY_RELAY_FIELDS) {
+      if (latest[field] !== undefined && latest[field] !== merged[field]) {
+        const label = RELAY_LABELS[field] || field;
+        const emoji = merged[field] === 'ON' ? '🟢' : '⚪';
+        sendTelegram(`${label} ${merged[field] === 'ON' ? 'menyala' : 'mati'} ${emoji} (${device})`);
+      }
+    }
+
     res.status(201).json({ success: true, data: withDeviceStatus(savedRow) });
   } catch (err) {
     console.error('Error in POST /api/data:', err);
@@ -192,7 +206,7 @@ app.post('/api/heartbeat', async (req, res) => {
     // Field yang tidak dikirim ESP (mis. laporan relay saja dari jadwal auto, tanpa suhu/cuaca)
     // dijaga tetap ada nilainya, supaya tidak melanggar NOT NULL saat device BARU pertama kali lapor.
     const before = (await pool.query(
-      `SELECT suhu, suhu2, suhu3, cuaca FROM iot2 WHERE device = $1`,
+      `SELECT status, status2, status3, status4, suhu, suhu2, suhu3, cuaca FROM iot2 WHERE device = $1`,
       [device]
     )).rows[0] || {};
     const suhuVal  = suhu  !== undefined ? String(suhu)  : (before.suhu  ?? '0');
@@ -235,6 +249,19 @@ app.post('/api/heartbeat', async (req, res) => {
     const relayReported = [status, status2, status3, status4, status5].some((v) => onOff(v) !== null);
     if (relayReported) {
       await publishUpdate(device, mqttPayload(result.rows[0]));
+    }
+
+    // Notifikasi Telegram kalau ada relay (manual lewat jadwal auto, bukan output PIR) yang berubah.
+    // before.status !== undefined memastikan ini bukan heartbeat PERTAMA device (tidak ada "sebelum"-nya).
+    if (before.status !== undefined) {
+      const savedRow = result.rows[0];
+      for (const field of NOTIFY_RELAY_FIELDS) {
+        if (before[field] !== savedRow[field]) {
+          const label = RELAY_LABELS[field] || field;
+          const emoji = savedRow[field] === 'ON' ? '🟢' : '⚪';
+          sendTelegram(`${label} ${savedRow[field] === 'ON' ? 'menyala' : 'mati'} ${emoji} (jadwal auto, ${device})`);
+        }
+      }
     }
 
     // Tidak mengembalikan data device ke pemanggil (endpoint ini tanpa kode aktivasi)
