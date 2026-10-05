@@ -18,6 +18,14 @@
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="relay_alerts" />
 
+        <service
+            android:name=".AppMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
         <activity
             android:name=".MainActivity"
             android:exported="true">
