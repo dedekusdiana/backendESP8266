@@ -4,6 +4,7 @@ const { Pool } = require('pg');
 const mqtt = require('mqtt');
 const { codeMatches, requireDeviceCode, requireAdmin } = require('./auth');
 const { sendTelegram, formatStatusMessage } = require('./telegram');
+const { notifyDevice } = require('./push');
 
 const app = express();
 app.use(cors());
@@ -47,6 +48,21 @@ function ownTelegramDevices() {
 function isOwnTelegramDevice(device) {
   const own = ownTelegramDevices();
   return own.length === 0 || own.includes(device);
+}
+
+// Kirim notifikasi perubahan relay:
+//  - Push FCM ke semua HP yang menambahkan device ini (topic per device) -> untuk pelanggan.
+//  - Telegram hanya untuk device milik pemilik (TELEGRAM_DEVICE_IDS).
+// Dua-duanya best-effort (tidak pernah melempar error). Harus di-await di pemanggil:
+// di Vercel (serverless) proses bisa dibekukan begitu response dikirim.
+function notifyRelayChange(device, field, isOn, viaAuto) {
+  const label = RELAY_LABELS[field] || field;
+  const verb = isOn ? 'menyala' : 'mati';
+  const tasks = [notifyDevice(device, device, `${label} ${verb}${viaAuto ? ' (jadwal auto)' : ''}`)];
+  if (isOwnTelegramDevice(device)) {
+    tasks.push(sendTelegram(`${label} ${verb} ${isOn ? '🟢' : '⚪'} (${viaAuto ? 'jadwal auto, ' : ''}${device})`));
+  }
+  return Promise.all(tasks);
 }
 // Sensor (bukan relay -- tidak bisa dinyalakan/dimatikan dari app, cuma laporan dari ESP lewat /api/heartbeat)
 const SENSOR_FIELDS = ['status_pir', 'status_dor_win'];
@@ -179,12 +195,10 @@ app.post('/api/data', requireDeviceCode, async (req, res) => {
     // Publish ke HiveMQ (best-effort, tidak memblokir response kalau gagal)
     await publishUpdate(device, mqttPayload(savedRow));
 
-    // Notifikasi Telegram kalau ada relay (manual, bukan output PIR) yang benar-benar berubah
-    for (const field of isOwnTelegramDevice(device) ? NOTIFY_RELAY_FIELDS : []) {
+    // Notifikasi (push + Telegram) kalau ada relay (manual, bukan output PIR) yang benar-benar berubah
+    for (const field of NOTIFY_RELAY_FIELDS) {
       if (latest[field] !== undefined && latest[field] !== merged[field]) {
-        const label = RELAY_LABELS[field] || field;
-        const emoji = merged[field] === 'ON' ? '🟢' : '⚪';
-        sendTelegram(`${label} ${merged[field] === 'ON' ? 'menyala' : 'mati'} ${emoji} (${device})`);
+        await notifyRelayChange(device, field, merged[field] === 'ON', false);
       }
     }
 
@@ -262,15 +276,13 @@ app.post('/api/heartbeat', async (req, res) => {
       await publishUpdate(device, mqttPayload(result.rows[0]));
     }
 
-    // Notifikasi Telegram kalau ada relay (manual lewat jadwal auto, bukan output PIR) yang berubah.
+    // Notifikasi (push + Telegram) kalau ada relay (lewat jadwal auto, bukan output PIR) yang berubah.
     // before.status !== undefined memastikan ini bukan heartbeat PERTAMA device (tidak ada "sebelum"-nya).
-    if (before.status !== undefined && isOwnTelegramDevice(device)) {
+    if (before.status !== undefined) {
       const savedRow = result.rows[0];
       for (const field of NOTIFY_RELAY_FIELDS) {
         if (before[field] !== savedRow[field]) {
-          const label = RELAY_LABELS[field] || field;
-          const emoji = savedRow[field] === 'ON' ? '🟢' : '⚪';
-          sendTelegram(`${label} ${savedRow[field] === 'ON' ? 'menyala' : 'mati'} ${emoji} (jadwal auto, ${device})`);
+          await notifyRelayChange(device, field, savedRow[field] === 'ON', true);
         }
       }
     }

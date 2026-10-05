@@ -11,6 +11,8 @@ import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Toast
+import android.Manifest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.smarthome.iot.databinding.ActivityMainBinding
@@ -24,6 +26,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var labelPrefs: LabelPrefs
     private lateinit var deviceStore: DeviceStore
     private val mainScope = CoroutineScope(Dispatchers.Main)
+    private val notifPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     private val handler = Handler(Looper.getMainLooper())
 
     private lateinit var relayAdapter: RelayAdapter
@@ -49,6 +52,10 @@ class MainActivity : AppCompatActivity() {
 
         labelPrefs = LabelPrefs(this)
         deviceStore = DeviceStore(this)
+
+        // Push notifikasi: buat channel, subscribe semua device yang tersimpan, minta izin (Android 13+)
+        Push.setup(this, deviceStore.list())
+        if (Push.needsPermission(this)) notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
 
         relayAdapter = RelayAdapter(
             labelPrefs = labelPrefs,

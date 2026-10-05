@@ -22,6 +22,7 @@ class DeviceStore(context: Context) {
             .putString("list", devices.joinToString(","))
             .putString("code:$device", code)
             .apply()
+        Push.subscribe(device)
     }
 
     fun remove(device: String) {
@@ -29,5 +30,6 @@ class DeviceStore(context: Context) {
             .putString("list", list().filter { it != device }.joinToString(","))
             .remove("code:$device")
             .apply()
+        Push.unsubscribe(device)
     }
 }
