@@ -37,6 +37,17 @@ const STATUS_FIELDS = ['status', 'status2', 'status3', 'status4', 'status5']; //
 // dikecualikan, karena bisa berubah tiap ada gerak dan akan membanjiri chat dengan notifikasi.
 const NOTIFY_RELAY_FIELDS = ['status', 'status2', 'status3', 'status4'];
 const RELAY_LABELS = { status: 'Relay 1', status2: 'Relay 2', status3: 'Relay 3', status4: 'Relay 4' };
+
+// Daftar device milik pemilik bot (TELEGRAM_DEVICE_IDS, pisah koma). Dipakai untuk membatasi
+// notifikasi relay DAN perintah "cek rumah" ke device ini saja. Kosong = semua device ikut.
+function ownTelegramDevices() {
+  return String(process.env.TELEGRAM_DEVICE_IDS || '')
+    .split(',').map((s) => s.trim()).filter(Boolean);
+}
+function isOwnTelegramDevice(device) {
+  const own = ownTelegramDevices();
+  return own.length === 0 || own.includes(device);
+}
 // Sensor (bukan relay -- tidak bisa dinyalakan/dimatikan dari app, cuma laporan dari ESP lewat /api/heartbeat)
 const SENSOR_FIELDS = ['status_pir', 'status_dor_win'];
 const SUHU_FIELDS = ['suhu', 'suhu2', 'suhu3'];
@@ -169,7 +180,7 @@ app.post('/api/data', requireDeviceCode, async (req, res) => {
     await publishUpdate(device, mqttPayload(savedRow));
 
     // Notifikasi Telegram kalau ada relay (manual, bukan output PIR) yang benar-benar berubah
-    for (const field of NOTIFY_RELAY_FIELDS) {
+    for (const field of isOwnTelegramDevice(device) ? NOTIFY_RELAY_FIELDS : []) {
       if (latest[field] !== undefined && latest[field] !== merged[field]) {
         const label = RELAY_LABELS[field] || field;
         const emoji = merged[field] === 'ON' ? '🟢' : '⚪';
@@ -253,7 +264,7 @@ app.post('/api/heartbeat', async (req, res) => {
 
     // Notifikasi Telegram kalau ada relay (manual lewat jadwal auto, bukan output PIR) yang berubah.
     // before.status !== undefined memastikan ini bukan heartbeat PERTAMA device (tidak ada "sebelum"-nya).
-    if (before.status !== undefined) {
+    if (before.status !== undefined && isOwnTelegramDevice(device)) {
       const savedRow = result.rows[0];
       for (const field of NOTIFY_RELAY_FIELDS) {
         if (before[field] !== savedRow[field]) {
@@ -299,9 +310,15 @@ app.post('/api/telegram/webhook', async (req, res) => {
     const isStatusCommand = text.includes('cek rumah') || text === '/cek' || text === '/status' || text === '/cekrumah';
 
     if (isStatusCommand) {
-      const { rows } = await pool.query(
-        `SELECT DISTINCT ON (device) * FROM iot2 ORDER BY device, time DESC`
-      );
+      // Hanya device milik pemilik bot: daftar ID di TELEGRAM_DEVICE_IDS (pisah koma),
+      // mis. "ESP-A1B2C3" atau "ESP-A1B2C3,ESP-D4E5F6". Kosong = semua device (tidak disarankan).
+      const ownDevices = ownTelegramDevices();
+      const { rows } = ownDevices.length
+        ? await pool.query(
+            `SELECT DISTINCT ON (device) * FROM iot2 WHERE device = ANY($1::text[]) ORDER BY device, time DESC`,
+            [ownDevices]
+          )
+        : await pool.query(`SELECT DISTINCT ON (device) * FROM iot2 ORDER BY device, time DESC`);
       // WAJIB di-await: di Vercel (serverless), proses bisa dibekukan begitu response dikirim
       await sendTelegram(formatStatusMessage(rows.map(withDeviceStatus)), chatId);
     }
