@@ -34,6 +34,7 @@
 #include <WiFiManager.h>   // by tzapu -- portal setup WiFi
 #include <time.h>
 #include "esp_wifi.h"
+#include <esp_system.h>   // esp_reset_reason() untuk diagnostik
 #define MQTT_KEEPALIVE 60
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
@@ -126,6 +127,69 @@ unsigned long doorChangedAt = 0;
 WiFiClientSecure secureMqttClient;
 PubSubClient mqttClient(secureMqttClient);
 
+// ---------------------------------------------------------------- Diagnostik (log Serial)
+// Untuk mencari penyebab WiFi putus / alat restart sendiri. Buka Serial Monitor (115200 baud).
+const unsigned long DIAG_INTERVAL_MS = 30000UL; // ringkasan kondisi tiap 30 detik
+unsigned long lastDiagLog = 0;
+unsigned long wifiDisconnectCount = 0;
+int lastDisconnectReason = 0;
+unsigned long lastRelaySwitchMs = 0;            // diisi di setRelay(), untuk melihat apakah putus terjadi setelah relay berpindah
+
+const char* resetReasonText(esp_reset_reason_t r) {
+  switch (r) {
+    case ESP_RST_POWERON:   return "POWERON (dicolok/dinyalakan)";
+    case ESP_RST_SW:        return "SW (restart lewat kode)";
+    case ESP_RST_PANIC:     return "PANIC (program crash)";
+    case ESP_RST_INT_WDT:   return "INT_WDT (watchdog)";
+    case ESP_RST_TASK_WDT:  return "TASK_WDT (watchdog, program macet)";
+    case ESP_RST_WDT:       return "WDT (watchdog)";
+    case ESP_RST_BROWNOUT:  return "BROWNOUT (tegangan drop -> cek catu daya!)";
+    case ESP_RST_DEEPSLEEP: return "DEEPSLEEP";
+    case ESP_RST_EXT:       return "EXT (tombol reset)";
+    default:                return "LAINNYA / tidak diketahui";
+  }
+}
+
+const char* disconnectReasonText(int reason) {
+  switch (reason) {
+    case 2:   return "AUTH_EXPIRE";
+    case 8:   return "ASSOC_LEAVE (diputus alat/router)";
+    case 15:  return "4WAY_HANDSHAKE_TIMEOUT (cek password/sinyal)";
+    case 200: return "BEACON_TIMEOUT (sinyal router hilang)";
+    case 201: return "NO_AP_FOUND (router tidak terlihat)";
+    case 202: return "AUTH_FAIL (password salah)";
+    case 203: return "ASSOC_FAIL";
+    case 204: return "HANDSHAKE_TIMEOUT";
+    case 205: return "CONNECTION_FAIL";
+    default:  return "kode lain (cari di dokumentasi ESP-IDF: wifi reason code)";
+  }
+}
+
+void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+  if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+    wifiDisconnectCount++;
+    lastDisconnectReason = info.wifi_sta_disconnected.reason;
+    long sinceRelay = lastRelaySwitchMs ? (long)((millis() - lastRelaySwitchMs) / 1000) : -1;
+    Serial.printf("[WIFI] PUTUS #%lu, alasan %d = %s | uptime %lus | relay terakhir berubah %ld dtk lalu (-1 = belum pernah)\n",
+                  wifiDisconnectCount, lastDisconnectReason, disconnectReasonText(lastDisconnectReason),
+                  millis() / 1000, sinceRelay);
+  } else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
+    Serial.printf("[WIFI] dapat IP %s, RSSI %d dBm\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+  }
+}
+
+void logDiagnostics() {
+  if (millis() - lastDiagLog < DIAG_INTERVAL_MS) return;
+  lastDiagLog = millis();
+  Serial.printf("[DIAG] uptime %lus | WiFi %s RSSI %d dBm | MQTT %s | heap bebas %u (terendah %u) | WiFi putus %lu kali (terakhir alasan %d)\n",
+                millis() / 1000,
+                WiFi.status() == WL_CONNECTED ? "OK" : "PUTUS",
+                WiFi.RSSI(),
+                mqttClient.connected() ? "OK" : "PUTUS",
+                (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap(),
+                wifiDisconnectCount, lastDisconnectReason);
+}
+
 // ---------------------------------------------------------------- WiFi
 bool hasSavedWiFi() {
   WiFi.mode(WIFI_STA);
@@ -163,6 +227,7 @@ void connectWiFi() {
       openConfigPortal();
     }
   }
+  WiFi.setSleep(false); // matikan power-save WiFi: koneksi lebih stabil (konsumsi daya sedikit naik)
   Serial.print("WiFi terhubung. IP: ");
   Serial.println(WiFi.localIP());
 }
@@ -170,6 +235,7 @@ void connectWiFi() {
 // ---------------------------------------------------------------- Relay
 void setRelay(int idx, bool on) {
   relayState[idx] = on;
+  lastRelaySwitchMs = millis();
   digitalWrite(RELAY_PINS[idx], (on == RELAY_ACTIVE_LOW) ? LOW : HIGH);
 }
 
@@ -455,6 +521,8 @@ void setup() {
 
   Serial.begin(115200);
   bootMs = millis();
+  Serial.printf("\n[BOOT] penyebab restart: %s\n", resetReasonText(esp_reset_reason()));
+  WiFi.onEvent(onWiFiEvent);
 
   // Nama device & nama WiFi setup: unik per alat, dari 3 byte terakhir MAC
   uint64_t mac = ESP.getEfuseMac();
@@ -490,6 +558,7 @@ void setup() {
 }
 
 void loop() {
+  logDiagnostics();
   if (WiFi.status() != WL_CONNECTED) {
     connectWiFi();
   }

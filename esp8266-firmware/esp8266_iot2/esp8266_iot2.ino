@@ -103,6 +103,80 @@ PubSubClient mqttClient(secureMqttClient);
 char mqttTopic[64];
 unsigned long lastHeartbeat = 0;
 
+// ---------------------------------------------------------------- Diagnostik, self-heal, simpan relay
+// Log tampil di Serial Monitor (115200). "blok terbesar" = potongan memori kosong terbesar yang
+// tersambung; ini angka yang menentukan apakah koneksi TLS baru bisa dibuat (bukan total heap bebas).
+const unsigned long DIAG_INTERVAL_MS = 30000UL;
+// Restart otomatis kalau heartbeat gagal terus (WiFi tersambung tapi HTTPS tidak bisa) atau memori
+// terlalu terpecah. Nilai MIN_FREE_BLOCK sebaiknya disesuaikan setelah membaca log [HB]/[DIAG].
+const int      MAX_HEARTBEAT_FAILS = 5;     // berturut-turut (sekitar 75 detik) -> restart
+const uint32_t MIN_FREE_BLOCK      = 5000;  // byte; di bawah ini heartbeat HTTPS dilewati & dihitung gagal
+
+unsigned long lastDiagLog = 0;
+unsigned long wifiDisconnectCount = 0;
+int  lastDisconnectReason = 0;
+unsigned long lastRelaySwitchMs = 0;
+int  heartbeatFails = 0;
+bool firstEvalSilent = false;               // true = habis restart lunak, evaluasi jadwal pertama tidak mengubah relay
+WiFiEventHandler onDiscHandler, onGotIpHandler;
+
+// Relay disimpan di RTC memory supaya lampu tidak padam saat alat restart sendiri (restart lunak/watchdog/crash).
+// RTC memory TIDAK bertahan saat listrik mati -- di kasus itu alat mulai dari relay OFF seperti biasa.
+const uint32_t RTC_OFFSET = 96;            // blok 4-byte; jauh dari area yang dipakai bootloader
+const uint32_t RTC_MAGIC  = 0x52454C59UL;  // "RELY"
+
+void saveRelaysToRtc() {
+  uint32_t d[3];
+  d[0] = RTC_MAGIC;
+  d[1] = 0;
+  for (int i = 0; i < NUM_AUTO; i++) if (digitalRead(RELAY_PINS[i]) == LOW) d[1] |= (1UL << i);
+  d[2] = d[0] ^ d[1] ^ 0xA5A5A5A5UL;
+  ESP.rtcUserMemoryWrite(RTC_OFFSET, d, sizeof(d));
+}
+
+// Return true kalau ada data relay yang valid (hanya dipercaya setelah restart lunak/crash/watchdog).
+bool readRelaysFromRtc(uint32_t& mask) {
+  rst_info* ri = ESP.getResetInfoPtr();
+  if (ri->reason == REASON_DEFAULT_RST || ri->reason == REASON_EXT_SYS_RST || ri->reason == REASON_DEEP_SLEEP_AWAKE) return false;
+  uint32_t d[3];
+  if (!ESP.rtcUserMemoryRead(RTC_OFFSET, d, sizeof(d))) return false;
+  if (d[0] != RTC_MAGIC || d[2] != (d[0] ^ d[1] ^ 0xA5A5A5A5UL)) return false;
+  mask = d[1];
+  return true;
+}
+
+void restartWithLog(const char* why) {
+  Serial.printf_P(PSTR("[RESTART] %s | heap %u | blok terbesar %u | uptime %lus\n"),
+                  why, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxFreeBlockSize(), millis() / 1000);
+  delay(200);
+  ESP.restart();
+}
+
+void diagSetup() {
+  Serial.printf_P(PSTR("\n[BOOT] penyebab restart: %s\n"), ESP.getResetReason().c_str());
+  onDiscHandler = WiFi.onStationModeDisconnected([](const WiFiEventStationModeDisconnected& e) {
+    wifiDisconnectCount++;
+    lastDisconnectReason = (int)e.reason;
+    long sinceRelay = lastRelaySwitchMs ? (long)((millis() - lastRelaySwitchMs) / 1000) : -1;
+    Serial.printf_P(PSTR("[WIFI] PUTUS #%lu, alasan %d | uptime %lus | relay terakhir berubah %ld dtk lalu (-1 = belum)\n"),
+                    wifiDisconnectCount, lastDisconnectReason, millis() / 1000, sinceRelay);
+  });
+  onGotIpHandler = WiFi.onStationModeGotIP([](const WiFiEventStationModeGotIP& e) {
+    Serial.printf_P(PSTR("[WIFI] dapat IP %s, RSSI %d dBm\n"), e.ip.toString().c_str(), WiFi.RSSI());
+  });
+}
+
+void diagLoop() {
+  if (millis() - lastDiagLog < DIAG_INTERVAL_MS) return;
+  lastDiagLog = millis();
+  Serial.printf_P(PSTR("[DIAG] uptime %lus | WiFi %s RSSI %d dBm | MQTT %s | heap %u | blok terbesar %u | WiFi putus %lu kali (alasan terakhir %d) | HB gagal berturut %d\n"),
+                  millis() / 1000,
+                  WiFi.status() == WL_CONNECTED ? "OK" : "PUTUS", WiFi.RSSI(),
+                  mqttClient.connected() ? "OK" : "PUTUS",
+                  (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxFreeBlockSize(),
+                  wifiDisconnectCount, lastDisconnectReason, heartbeatFails);
+}
+
 void statusLed(bool on) {
   if (STATUS_LED >= 0) digitalWrite(STATUS_LED, on ? LOW : HIGH);
 }
@@ -113,7 +187,7 @@ void openConfigPortal() {
   bool hasSaved = WiFi.SSID().length() > 0;
 
   Serial.println();
-  Serial.print("Portal setup WiFi dibuka. Sambungkan HP ke WiFi: ");
+  Serial.print(F("Portal setup WiFi dibuka. Sambungkan HP ke WiFi: "));
   Serial.println(apName);
 
   WiFiManager wm;
@@ -130,13 +204,13 @@ void connectWiFi() {
 
   while (WiFi.status() != WL_CONNECTED) {
     if (WiFi.SSID().length() > 0) {
-      Serial.print("Menghubungkan ke WiFi tersimpan: ");
+      Serial.print(F("Menghubungkan ke WiFi tersimpan: "));
       Serial.println(WiFi.SSID());
       WiFi.begin(); // pakai kredensial yang tersimpan di flash
 
       unsigned long t0 = millis();
       while (WiFi.status() != WL_CONNECTED && millis() - t0 < WIFI_RETRY_BEFORE_PORTAL_MS) {
-        Serial.print(".");
+        Serial.print(F("."));
         statusLed(true);
         delay(150);
         statusLed(false);
@@ -150,13 +224,16 @@ void connectWiFi() {
     }
   }
 
-  Serial.print("WiFi terhubung. IP: ");
+  WiFi.setSleepMode(WIFI_NONE_SLEEP); // matikan power-save WiFi: koneksi lebih stabil
+  Serial.print(F("WiFi terhubung. IP: "));
   Serial.println(WiFi.localIP());
 }
 
 // Pasang status relay ke pin (aktif LOW)
 void setRelay(int idx, bool on) {
   digitalWrite(RELAY_PINS[idx], on ? LOW : HIGH);
+  lastRelaySwitchMs = millis();
+  saveRelaysToRtc();
 }
 
 // Parse "ON,18:00,06:00" -> isi struct jadwal. Return false kalau format salah.
@@ -195,15 +272,21 @@ void checkAutoSchedules() {
 
     int desired = inWindow(nowMin, a.onMinute, a.offMinute) ? 1 : 0;
     if (desired != a.lastDesired) {
+      // Habis restart lunak: relay sudah dipulihkan ke kondisi terakhir, jadi jangan ditimpa
+      // (mis. relay yang dinyalakan manual di luar jam jadwal). Jadwal berlaku lagi di pergantian berikutnya.
+      bool silent = (a.lastDesired == -1) && firstEvalSilent;
       a.lastDesired = desired;
-      setRelay(i, desired == 1);
-      a.pendingReport = true;
-      Serial.print("AUTO ");
-      Serial.print(i + 1);
-      Serial.print(" -> ");
-      Serial.println(desired ? "ON" : "OFF");
+      if (!silent) {
+        setRelay(i, desired == 1);
+        a.pendingReport = true;
+        Serial.print(F("AUTO "));
+        Serial.print(i + 1);
+        Serial.print(F(" -> "));
+        Serial.println(desired ? "ON" : "OFF");
+      }
     }
   }
+  firstEvalSilent = false;
 }
 
 // Lapor status relay ke backend (POST /api/heartbeat, field status/status2). Return true kalau sukses.
@@ -222,13 +305,13 @@ bool postRelayState(int idx) {
   StaticJsonDocument<128> doc;
   doc["device"] = deviceName;
   doc[RELAY_FIELDS[idx]] = (digitalRead(RELAY_PINS[idx]) == LOW) ? "ON" : "OFF";
-  String payload;
-  serializeJson(doc, payload);
+  char payload[128];
+  size_t payloadLen = serializeJson(doc, payload, sizeof(payload));
 
-  int code = http.POST(payload);
-  Serial.print("Lapor relay ");
+  int code = http.POST((uint8_t*)payload, payloadLen);
+  Serial.print(F("Lapor relay "));
   Serial.print(idx + 1);
-  Serial.print(" -> kode ");
+  Serial.print(F(" -> kode "));
   Serial.println(code);
 
   http.end();
@@ -251,20 +334,16 @@ void reportPendingRelays() {
 
 // Dipanggil otomatis setiap ada pesan baru masuk di topic yang di-subscribe
 void onMqttMessage(char* topic, byte* payload, unsigned int length) {
-  String message;
-  for (unsigned int i = 0; i < length; i++) {
-    message += (char)payload[i];
-  }
-
-  Serial.print("Pesan masuk [");
+  Serial.print(F("Pesan masuk ["));
   Serial.print(topic);
-  Serial.print("]: ");
-  Serial.println(message);
+  Serial.print(F("]: "));
+  Serial.write(payload, length);
+  Serial.println();
 
   StaticJsonDocument<512> doc;
-  DeserializationError err = deserializeJson(doc, message);
+  DeserializationError err = deserializeJson(doc, (const char*)payload, length);
   if (err) {
-    Serial.println("Gagal parse JSON.");
+    Serial.println(F("Gagal parse JSON."));
     return;
   }
 
@@ -279,9 +358,9 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length) {
         autoSched[i].offMinute = parsed.offMinute;
         autoSched[i].lastDesired = -1;
         strlcpy(autoSched[i].raw, raw, sizeof(autoSched[i].raw));
-        Serial.print("Jadwal ");
+        Serial.print(F("Jadwal "));
         Serial.print(AUTO_FIELDS[i]);
-        Serial.print(": ");
+        Serial.print(F(": "));
         Serial.println(raw);
       }
     }
@@ -293,47 +372,50 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length) {
     if (!st) continue;
     bool shouldBeOn = strcmp(st, "ON") == 0;
     setRelay(i, shouldBeOn);
-    Serial.print("Relay ");
+    Serial.print(F("Relay "));
     Serial.print(i + 1);
-    Serial.print(" -> ");
+    Serial.print(F(" -> "));
     Serial.println(shouldBeOn ? "ON" : "OFF");
   }
 }
 
 void connectMqtt() {
-  int failCount = 0;
-
   while (!mqttClient.connected()) {
-    Serial.print("Menghubungkan ke HiveMQ...");
+    Serial.print(F("Menghubungkan ke HiveMQ..."));
 
-    String clientId = String("esp8266-") + deviceName;
+    char clientId[40];
+    snprintf(clientId, sizeof(clientId), "esp8266-%s", deviceName);
 
-    if (mqttClient.connect(clientId.c_str(), MQTT_USER, MQTT_PASS)) {
-      Serial.println("Terhubung");
+    if (mqttClient.connect(clientId, MQTT_USER, MQTT_PASS)) {
+
+      Serial.println(F("Terhubung"));
+
       mqttClient.subscribe(mqttTopic);
-      Serial.print("Subscribe ke: ");
+
+      Serial.print(F("Subscribe ke: "));
       Serial.println(mqttTopic);
-      failCount = 0;
+
+      statusLed(false);
+
     } else {
-      failCount++;
-      Serial.print("Gagal, rc=");
-      Serial.print(mqttClient.state());
-      Serial.println(" -> coba lagi 2 detik lagi");
+
+      Serial.printf_P(
+        PSTR("Gagal, rc=%d | heap %u | blok terbesar %u"),
+        mqttClient.state(),
+        (unsigned)ESP.getFreeHeap(),
+        (unsigned)ESP.getMaxFreeBlockSize()
+      );
+
+      Serial.println(F(" -> coba lagi 2 detik lagi"));
+
       statusLed(true);
       delay(100);
       statusLed(false);
+
       delay(1900);
 
-      // WiFi.status() kadang telat/salah lapor "masih connected" walau WiFi beneran putus
-      // (terutama kalau router-nya yang mati, bukan ESP-nya). Kalau MQTT gagal terus,
-      // anggap WiFi memang putus, paksa reconnect (ini yang bikin LED kedip lagi).
-      if (failCount >= 3) {
-        Serial.println("Gagal terus -- paksa WiFi reconnect...");
-        WiFi.disconnect();
-        delay(200);
-        connectWiFi(); // blocking sampai WiFi beneran nyambung lagi (atau portal setup dibuka)
-        failCount = 0;
-      }
+      // JANGAN disconnect WiFi di sini.
+      // Biarkan MQTT mencoba reconnect sendiri.
     }
   }
 }
@@ -344,12 +426,21 @@ void connectMqtt() {
 // nilai lama untuk itu, cuma suhu & last_heartbeat yang ter-refresh.
 void sendHeartbeat() {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi tidak terhubung, skip heartbeat.");
+    Serial.println(F("WiFi tidak terhubung, skip heartbeat."));
     return;
   }
 
-  Serial.print("Free heap sebelum heartbeat: ");
-  Serial.println(ESP.getFreeHeap());
+  uint32_t heapBefore = ESP.getFreeHeap();
+  uint32_t blockBefore = ESP.getMaxFreeBlockSize();
+
+  // Memori terlalu terpecah untuk membuka koneksi TLS baru -> lewati, hitung gagal.
+  if (blockBefore < MIN_FREE_BLOCK) {
+    heartbeatFails++;
+    Serial.printf_P(PSTR("[HB] DILEWATI: blok terbesar %u < %u (heap %u) | gagal berturut %d\n"),
+                    (unsigned)blockBefore, (unsigned)MIN_FREE_BLOCK, (unsigned)heapBefore, heartbeatFails);
+    if (heartbeatFails >= MAX_HEARTBEAT_FAILS) restartWithLog("memori terpecah, heartbeat gagal terus");
+    return;
+  }
 
   WiFiClientSecure client;
   client.setInsecure();
@@ -360,17 +451,12 @@ void sendHeartbeat() {
   http.addHeader("Content-Type", "application/json");
   http.setTimeout(10000); // dilonggarkan -- MQTT sekarang toleran (keepalive 60s), jadi aman dikasih waktu lebih
 
-  // Suhu + kelembaban dummy, digabung jadi satu teks (bukan kolom terpisah)
-  float suhu1 = random(250, 350) / 10.0;
-  float suhu2 = random(250, 350) / 10.0;
-  float suhu3 = random(250, 350) / 10.0;
-  int lembab1 = random(40, 90);
-  int lembab2 = random(40, 90);
-  int lembab3 = random(40, 90);
-
-  String suhuText1 = String(suhu1, 1) + "C, " + String(lembab1) + "%RH";
-  String suhuText2 = String(suhu2, 1) + "C, " + String(lembab2) + "%RH";
-  String suhuText3 = String(suhu3, 1) + "C, " + String(lembab3) + "%RH";
+  // Suhu + kelembaban dummy, digabung jadi satu teks (bukan kolom terpisah). Pakai buffer tetap, bukan String.
+  char suhuText1[24], suhuText2[24], suhuText3[24];
+  int t1 = random(250, 350), t2 = random(250, 350), t3 = random(250, 350); // per 0,1 derajat
+  snprintf(suhuText1, sizeof(suhuText1), "%d.%dC, %d%%RH", t1 / 10, t1 % 10, (int)random(40, 90));
+  snprintf(suhuText2, sizeof(suhuText2), "%d.%dC, %d%%RH", t2 / 10, t2 % 10, (int)random(40, 90));
+  snprintf(suhuText3, sizeof(suhuText3), "%d.%dC, %d%%RH", t3 / 10, t3 % 10, (int)random(40, 90));
 
   // Status cuaca dummy, acak salah satu
   const char* cuacaOptions[] = { "Cerah", "Hujan", "Mendung" };
@@ -391,28 +477,41 @@ void sendHeartbeat() {
   doc["status_pir"] = pirDummy;
   doc["status_dor_win"] = doorWinDummy;
 
-  String payload;
-  serializeJson(doc, payload);
+  char payload[300];
+  size_t payloadLen = serializeJson(doc, payload, sizeof(payload));
 
-  int httpCode = http.POST(payload);
+  int httpCode = http.POST((uint8_t*)payload, payloadLen);
   if (httpCode > 0) {
-    Serial.print("Heartbeat terkirim, kode: ");
+    heartbeatFails = 0;
+    Serial.print(F("Heartbeat terkirim, kode: "));
     Serial.print(httpCode);
-    Serial.print(" | ");
+    Serial.print(F(" | "));
     Serial.println(payload);
   } else {
-    Serial.print("Heartbeat gagal: ");
-    Serial.println(http.errorToString(httpCode));
+    heartbeatFails++;
+    Serial.printf_P(PSTR("Heartbeat gagal: %s | gagal berturut %d\n"), http.errorToString(httpCode).c_str(), heartbeatFails);
   }
 
   http.end();
   client.stop();
   delay(200); // kasih waktu stack WiFi/TLS "napas" sebelum lanjut proses MQTT
+
+  // Sebelum vs sesudah: kalau angka "sesudah" terus lebih kecil dari "sebelum" dari siklus ke siklus, ada kebocoran.
+  Serial.printf_P(PSTR("[HB] heap %u -> %u | blok terbesar %u -> %u\n"),
+                  (unsigned)heapBefore, (unsigned)ESP.getFreeHeap(), (unsigned)blockBefore, (unsigned)ESP.getMaxFreeBlockSize());
+
+  if (heartbeatFails >= MAX_HEARTBEAT_FAILS) restartWithLog("heartbeat gagal berturut-turut");
 }
 
 void setup() {
+  // Habis restart lunak/crash/watchdog: pulihkan relay ke kondisi terakhir (lampu tidak padam).
+  // Habis listrik mati/dicolok: semua relay OFF seperti biasa.
+  uint32_t restoredMask = 0;
+  bool restored = readRelaysFromRtc(restoredMask);
+  firstEvalSilent = restored;
   for (int i = 0; i < NUM_AUTO; i++) {
-    digitalWrite(RELAY_PINS[i], HIGH); // HIGH dulu sebelum jadi OUTPUT (default OFF, aman saat boot)
+    bool on = restored && ((restoredMask >> i) & 1UL);
+    digitalWrite(RELAY_PINS[i], on ? LOW : HIGH); // atur level dulu sebelum jadi OUTPUT (default OFF, aman saat boot)
     pinMode(RELAY_PINS[i], OUTPUT);
   }
 
@@ -422,6 +521,8 @@ void setup() {
   }
 
   Serial.begin(115200);
+  diagSetup();
+  if (restored) Serial.printf_P(PSTR("[BOOT] relay dipulihkan dari RTC (mask %u)\n"), (unsigned)restoredMask);
   randomSeed(micros()); // biar nilai suhu dummy tidak sama persis tiap boot
 
   // Nama device & nama WiFi setup, unik per alat (dari Chip ID ESP)
@@ -429,7 +530,7 @@ void setup() {
   snprintf(apName, sizeof(apName), "SmartHome-%06lX", (unsigned long)ESP.getChipId());
   snprintf(mqttTopic, sizeof(mqttTopic), "smarthome/%s/status", deviceName);
   Serial.println();
-  Serial.print("Device: ");
+  Serial.print(F("Device: "));
   Serial.println(deviceName);
 
   if (RESET_WIFI_ON_BOOT) {
@@ -455,6 +556,7 @@ void setup() {
 }
 
 void loop() {
+  diagLoop();
   if (WiFi.status() != WL_CONNECTED) {
     connectWiFi();
   }
