@@ -62,10 +62,10 @@ const int STATUS_LED = -1;
 // Backend Vercel (dipakai buat heartbeat status online)
 const char* HEARTBEAT_URL = "https://backend-esp-8266.vercel.app/api/heartbeat";
 
-// Broker HiveMQ Cloud (dipakai buat kontrol relay real-time)
-const char* MQTT_HOST = "99a913d804834091bc755acbd559d13f.s1.eu.hivemq.cloud";
+// Broker EMQL Cloud (dipakai buat kontrol relay real-time)
+const char* MQTT_HOST = "zd23e698.ala.eu-central-1.emqxsl.com";
 const int   MQTT_PORT = 8883;
-const char* MQTT_USER = "dede_smarthome";
+const char* MQTT_USER = "SmartHomeIoT";
 const char* MQTT_PASS = "rayyanazka";
 
 // Interval heartbeat (ms). Backend anggap OFFLINE kalau lebih dari 35 detik
@@ -396,7 +396,7 @@ void tryConnectMqtt() {
   if (millis() - lastMqttAttempt < MQTT_RETRY_INTERVAL_MS) return;
   lastMqttAttempt = millis();
 
-  Serial.print(F("Menghubungkan ke HiveMQ..."));
+  Serial.print(F("Menghubungkan ke EMQX Cloud..."));
 
   char clientId[40];
   snprintf(clientId, sizeof(clientId), "esp8266-%s", deviceName);
