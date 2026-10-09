@@ -109,7 +109,7 @@ unsigned long lastHeartbeat = 0;
 const unsigned long DIAG_INTERVAL_MS = 30000UL;
 // Restart otomatis kalau heartbeat gagal terus (WiFi tersambung tapi HTTPS tidak bisa) atau memori
 // terlalu terpecah. Nilai MIN_FREE_BLOCK sebaiknya disesuaikan setelah membaca log [HB]/[DIAG].
-const int      MAX_HEARTBEAT_FAILS = 5;     // berturut-turut (sekitar 75 detik) -> restart
+const int      MAX_HEARTBEAT_FAILS = 5;     // hanya dipakai untuk kondisi memori terfragmentasi
 const uint32_t MIN_FREE_BLOCK      = 5000;  // byte; di bawah ini heartbeat HTTPS dilewati & dihitung gagal
 
 unsigned long lastDiagLog = 0;
@@ -379,44 +379,49 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length) {
   }
 }
 
-void connectMqtt() {
-  while (!mqttClient.connected()) {
-    Serial.print(F("Menghubungkan ke HiveMQ..."));
+// Coba konek MQTT secara NON-BLOCKING.
+// Kalau HiveMQ sedang bermasalah, loop() tetap berjalan sehingga:
+// - heartbeat tetap bisa dikirim
+// - AUTO tetap dicek
+// - relay tetap bisa diproses
+// - ESP tidak "hang" menunggu MQTT.
+unsigned long lastMqttAttempt = 0;
+const unsigned long MQTT_RETRY_INTERVAL_MS = 5000UL;
 
-    char clientId[40];
-    snprintf(clientId, sizeof(clientId), "esp8266-%s", deviceName);
+void tryConnectMqtt() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  if (mqttClient.connected()) return;
 
-    if (mqttClient.connect(clientId, MQTT_USER, MQTT_PASS)) {
+  // Jangan mencoba terlalu sering.
+  if (millis() - lastMqttAttempt < MQTT_RETRY_INTERVAL_MS) return;
+  lastMqttAttempt = millis();
 
-      Serial.println(F("Terhubung"));
+  Serial.print(F("Menghubungkan ke HiveMQ..."));
 
-      mqttClient.subscribe(mqttTopic);
+  char clientId[40];
+  snprintf(clientId, sizeof(clientId), "esp8266-%s", deviceName);
 
+  if (mqttClient.connect(clientId, MQTT_USER, MQTT_PASS)) {
+    Serial.println(F("Terhubung"));
+
+    if (mqttClient.subscribe(mqttTopic)) {
       Serial.print(F("Subscribe ke: "));
       Serial.println(mqttTopic);
-
-      statusLed(false);
-
     } else {
-
-      Serial.printf_P(
-        PSTR("Gagal, rc=%d | heap %u | blok terbesar %u"),
-        mqttClient.state(),
-        (unsigned)ESP.getFreeHeap(),
-        (unsigned)ESP.getMaxFreeBlockSize()
-      );
-
-      Serial.println(F(" -> coba lagi 2 detik lagi"));
-
-      statusLed(true);
-      delay(100);
-      statusLed(false);
-
-      delay(1900);
-
-      // JANGAN disconnect WiFi di sini.
-      // Biarkan MQTT mencoba reconnect sendiri.
+      Serial.println(F("Subscribe gagal."));
     }
+
+    statusLed(false);
+  } else {
+    Serial.printf_P(
+      PSTR("Gagal, rc=%d | heap %u | blok terbesar %u -> coba lagi 5 detik lagi\n"),
+      mqttClient.state(),
+      (unsigned)ESP.getFreeHeap(),
+      (unsigned)ESP.getMaxFreeBlockSize()
+    );
+
+    // Tidak ada delay panjang dan TIDAK disconnect WiFi.
+    statusLed(true);
   }
 }
 
@@ -500,7 +505,10 @@ void sendHeartbeat() {
   Serial.printf_P(PSTR("[HB] heap %u -> %u | blok terbesar %u -> %u\n"),
                   (unsigned)heapBefore, (unsigned)ESP.getFreeHeap(), (unsigned)blockBefore, (unsigned)ESP.getMaxFreeBlockSize());
 
-  if (heartbeatFails >= MAX_HEARTBEAT_FAILS) restartWithLog("heartbeat gagal berturut-turut");
+  // Timeout/error HTTP sementara TIDAK me-restart ESP.
+  // WiFi/MQTT boleh pulih sendiri tanpa mematikan relay.
+  // Restart hanya dilakukan pada kondisi memori terfragmentasi
+  // (lihat pemeriksaan blockBefore < MIN_FREE_BLOCK di atas).
 }
 
 void setup() {
@@ -550,7 +558,7 @@ void setup() {
   mqttClient.setCallback(onMqttMessage);
   mqttClient.setBufferSize(768); // payload MQTT: status relay + jadwal auto
 
-  connectMqtt();
+  tryConnectMqtt();
   sendHeartbeat();
   lastHeartbeat = millis();
 }
@@ -562,9 +570,9 @@ void loop() {
   }
 
   if (!mqttClient.connected()) {
-    connectMqtt();
+    tryConnectMqtt();
   }
-  mqttClient.loop();
+  if (mqttClient.connected()) mqttClient.loop();
 
   if (millis() - lastAutoCheck >= 1000) {
     lastAutoCheck = millis();
@@ -575,6 +583,6 @@ void loop() {
   if (millis() - lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
     lastHeartbeat = millis();
     sendHeartbeat();
-    mqttClient.loop(); // langsung proses MQTT lagi setelah heartbeat selesai
+    if (mqttClient.connected()) mqttClient.loop(); // proses MQTT lagi setelah heartbeat
   }
 }
