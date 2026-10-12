@@ -37,7 +37,7 @@ class MainActivity : AppCompatActivity() {
     private var selectedDevice: String? = null
     private var isUpdating = false
 
-    private val pollIntervalMs = 5_000L
+    private val pollIntervalMs = 15_000L
     private val pollRunnable = object : Runnable {
         override fun run() {
             loadStatus(showSpinner = false)
