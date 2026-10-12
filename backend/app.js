@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
 const mqtt = require('mqtt');
+const crypto = require('crypto');
 const { codeMatches, requireDeviceCode, requireAdmin } = require('./auth');
 const { sendTelegram, formatStatusMessage } = require('./telegram');
 const { notifyDevice } = require('./push');
@@ -15,20 +16,15 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-// Kalau sudah lebih dari sekian detik tanpa kabar (heartbeat) dari device,
-// dianggap OFFLINE. Heartbeat ESP8266 dikirim tiap 15 detik, threshold 35 detik
-// (lebih longgar dari interval heartbeat) supaya tidak "kedip" karena jitter jaringan.
-const OFFLINE_THRESHOLD_SECONDS = Number(process.env.OFFLINE_THRESHOLD_SECONDS || 35);
-
+// Status online/offline TIDAK lagi dihitung dari heartbeat. ESP memakai MQTT Last Will (LWT) di topic
+// smarthome/<device>/online ("online" saat konek, "offline" dipublish BROKER saat ESP putus).
+// EMQX Rule Engine meneruskan perubahan itu ke POST /api/mqtt-event, yang menyimpan kolom is_online.
+// last_heartbeat sekarang berarti "kontak terakhir" (waktu event online/offline/telemetry terakhir).
 function withDeviceStatus(row) {
   if (!row) return row;
-  const heartbeatTime = row.last_heartbeat || null;
-  const secondsSinceHeartbeat = heartbeatTime
-    ? (Date.now() - new Date(heartbeatTime).getTime()) / 1000
-    : Infinity; // belum pernah heartbeat sama sekali -> anggap offline
   return {
     ...row,
-    status_device: secondsSinceHeartbeat < OFFLINE_THRESHOLD_SECONDS ? 'online' : 'offline',
+    status_device: row.is_online ? 'online' : 'offline',
   };
 }
 
@@ -211,9 +207,9 @@ app.post('/api/data', requireDeviceCode, async (req, res) => {
 
 // ---------------------------------------------------------------
 // POST /api/heartbeat
-// Dipanggil KHUSUS oleh ESP8266 tiap 15 detik, TERPISAH dari /api/data (kontrol relay).
-// Cuma nyentuh kolom last_heartbeat -- supaya update relay dari APP tidak ikut
-// bikin status_device keliatan online.
+// SEKARANG hanya untuk laporan relay dari ESP (saat jadwal auto mengubah relay) -- BUKAN heartbeat lagi.
+// TIDAK menyentuh last_heartbeat / is_online: status online/offline datang dari MQTT LWT
+// lewat POST /api/mqtt-event. (Nama endpoint dipertahankan supaya firmware lama tetap kompatibel.)
 // ---------------------------------------------------------------
 app.post('/api/heartbeat', async (req, res) => {
   try {
@@ -244,7 +240,7 @@ app.post('/api/heartbeat', async (req, res) => {
                          suhu, suhu2, suhu3, cuaca, status_pir, status_dor_win, last_heartbeat)
        VALUES ($1, COALESCE($2::varchar, 'OFF'), COALESCE($3::varchar, 'OFF'), COALESCE($4::varchar, 'OFF'),
                COALESCE($5::varchar, 'OFF'), COALESCE($6::varchar, 'OFF'),
-               $7, $8, $9, $10, COALESCE($11::varchar, 'OFF'), COALESCE($12::varchar, 'OFF'), NOW())
+               $7, $8, $9, $10, COALESCE($11::varchar, 'OFF'), COALESCE($12::varchar, 'OFF'), NULL)
        ON CONFLICT (device) DO UPDATE SET
          status  = COALESCE($2::varchar, iot2.status),
          status2 = COALESCE($3::varchar, iot2.status2),
@@ -256,8 +252,7 @@ app.post('/api/heartbeat', async (req, res) => {
          suhu3 = COALESCE(EXCLUDED.suhu3, iot2.suhu3),
          cuaca = COALESCE(EXCLUDED.cuaca, iot2.cuaca),
          status_pir     = COALESCE($11::varchar, iot2.status_pir),
-         status_dor_win = COALESCE($12::varchar, iot2.status_dor_win),
-         last_heartbeat = NOW()
+         status_dor_win = COALESCE($12::varchar, iot2.status_dor_win)
        RETURNING *`,
       [
         device,
@@ -292,6 +287,82 @@ app.post('/api/heartbeat', async (req, res) => {
   } catch (err) {
     console.error('Error in POST /api/heartbeat:', err);
     res.status(500).json({ error: 'Gagal menyimpan heartbeat' });
+  }
+});
+
+// ---------------------------------------------------------------
+// POST /api/mqtt-event
+// Dipanggil oleh EMQX Rule Engine (action Webhook) HANYA saat ada pesan di
+//   smarthome/<device>/online     -> "online" | "offline" (LWT; "offline" dipublish broker)
+//   smarthome/<device>/telemetry  -> JSON suhu, cuaca, status_pir, status_dor_win
+// Jadi Vercel cuma dipanggil saat status berubah / tiap beberapa menit, bukan tiap 15 detik.
+// Keamanan: header X-Webhook-Secret harus sama dengan env MQTT_WEBHOOK_SECRET.
+// Body (dari rule SQL: SELECT topic, payload ...): { "topic": "...", "payload": "online" | {...} | "{...}" }
+// ---------------------------------------------------------------
+function secretMatches(given, expected) {
+  const a = Buffer.from(String(given || ''));
+  const b = Buffer.from(String(expected || ''));
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+app.post('/api/mqtt-event', async (req, res) => {
+  try {
+    const secret = process.env.MQTT_WEBHOOK_SECRET;
+    if (!secret) return res.status(503).json({ error: 'MQTT_WEBHOOK_SECRET belum diatur di server' });
+    if (!secretMatches(req.get('X-Webhook-Secret'), secret)) return res.sendStatus(403);
+
+    const { topic, payload } = req.body || {};
+    const m = /^smarthome\/([A-Za-z0-9_-]{1,50})\/(online|telemetry)$/.exec(String(topic || ''));
+    if (!m) return res.status(400).json({ error: 'Topic tidak dikenali' });
+    const [, device, kind] = m;
+
+    if (kind === 'online') {
+      const text = String(payload).trim().toLowerCase();
+      if (text !== 'online' && text !== 'offline') {
+        return res.status(400).json({ error: 'Payload harus "online" atau "offline"' });
+      }
+      const isOnline = text === 'online';
+      const prev = (await pool.query(`SELECT is_online FROM iot2 WHERE device = $1`, [device])).rows[0];
+      await pool.query(
+        `INSERT INTO iot2 (device, is_online, last_heartbeat) VALUES ($1, $2, NOW())
+         ON CONFLICT (device) DO UPDATE SET is_online = $2, last_heartbeat = NOW()`,
+        [device, isOnline]
+      );
+      // Notifikasi kalau status benar-benar berubah (best-effort, hanya device milik pemilik bot).
+      if (prev && prev.is_online !== isOnline && isOwnTelegramDevice(device)) {
+        await sendTelegram(`${isOnline ? '🟢 ONLINE' : '🔴 OFFLINE'} (${device})`);
+      }
+      return res.json({ success: true, device, status_device: isOnline ? 'online' : 'offline' });
+    }
+
+    // telemetry
+    let data = payload;
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data); } catch { return res.status(400).json({ error: 'Payload telemetry bukan JSON' }); }
+    }
+    if (!data || typeof data !== 'object') return res.status(400).json({ error: 'Payload telemetry tidak valid' });
+
+    const onOff = (v) => (v === 'ON' || v === 'OFF' ? v : null);
+    const txt = (v) => (v === undefined || v === null ? null : String(v).slice(0, 20));
+    await pool.query(
+      `INSERT INTO iot2 (device, suhu, suhu2, suhu3, cuaca, status_pir, status_dor_win, last_heartbeat)
+       VALUES ($1, COALESCE($2::varchar, '0'), COALESCE($3::varchar, '0'), COALESCE($4::varchar, '0'),
+               COALESCE($5::varchar, '-'), COALESCE($6::varchar, 'OFF'), COALESCE($7::varchar, 'OFF'), NOW())
+       ON CONFLICT (device) DO UPDATE SET
+         suhu  = COALESCE($2::varchar, iot2.suhu),
+         suhu2 = COALESCE($3::varchar, iot2.suhu2),
+         suhu3 = COALESCE($4::varchar, iot2.suhu3),
+         cuaca = COALESCE($5::varchar, iot2.cuaca),
+         status_pir     = COALESCE($6::varchar, iot2.status_pir),
+         status_dor_win = COALESCE($7::varchar, iot2.status_dor_win),
+         last_heartbeat = NOW()`,
+      [device, txt(data.suhu), txt(data.suhu2), txt(data.suhu3), txt(data.cuaca),
+       onOff(data.status_pir), onOff(data.status_dor_win)]
+    );
+    res.json({ success: true, device });
+  } catch (err) {
+    console.error('Error in POST /api/mqtt-event:', err);
+    res.status(500).json({ error: 'Gagal memproses event MQTT' });
   }
 });
 
