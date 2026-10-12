@@ -314,7 +314,9 @@ app.post('/api/mqtt-event', async (req, res) => {
     const { topic, payload } = req.body || {};
     // Log ringkas isi event (dipakai untuk diagnosa; volume kecil karena hanya online/offline + telemetry 5 menit)
     console.log('mqtt-event', JSON.stringify({ topic, payload }).slice(0, 400));
-    const m = /^smarthome\/([A-Za-z0-9_-]{1,50})\/(online|telemetry)$/.exec(String(topic || ''));
+    // EMQX Serverless menambahkan awalan "$tenants/<id>/" pada topic pesan Last Will (offline); buang dulu.
+    const cleanTopic = String(topic || '').replace(/^\$tenants\/[^/]+\//, '');
+    const m = /^smarthome\/([A-Za-z0-9_-]{1,50})\/(online|telemetry)$/.exec(cleanTopic);
     if (!m) { console.error('mqtt-event 400: topic tidak dikenali', JSON.stringify(req.body).slice(0, 400)); return res.status(400).json({ error: 'Topic tidak dikenali' }); }
     const [, device, kind] = m;
 
