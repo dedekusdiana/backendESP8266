@@ -12,30 +12,12 @@ android {
         applicationId "com.smarthome.iot"
         minSdk 24
         targetSdk 34
-        // versionCode WAJIB naik tiap rilis supaya Android mau meng-update di atas versi lama.
-        // Di GitHub Actions diisi otomatis dari nomor run (VERSION_CODE); lokal default 1.
-        versionCode (System.getenv("VERSION_CODE") ?: "1").toInteger()
-        versionName "1.0." + (System.getenv("VERSION_CODE") ?: "1")
-    }
-
-    // Tanda tangan rilis. Kunci (keystore) HARUS SAMA tiap build, kalau tidak Android menolak update
-    // ("aplikasi tidak terpasang"/harus uninstall). Nilainya diambil dari environment (GitHub Secrets),
-    // bukan ditulis di sini. Kalau tidak diisi (mis. build lokal), release tidak ditandatangani.
-    signingConfigs {
-        release {
-            def ksFile = System.getenv("KEYSTORE_FILE")
-            if (ksFile) {
-                storeFile file(ksFile)
-                storePassword System.getenv("KEYSTORE_PASSWORD")
-                keyAlias (System.getenv("KEY_ALIAS") ?: "smarthome")
-                keyPassword (System.getenv("KEY_PASSWORD") ?: System.getenv("KEYSTORE_PASSWORD"))
-            }
-        }
+        versionCode 1
+        versionName "1.0"
     }
 
     buildTypes {
         release {
-            if (System.getenv("KEYSTORE_FILE")) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
