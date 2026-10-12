@@ -1,12 +1,17 @@
 /*
   ESP32 Smart Home -- kontrol 5 relay + 3x DHT22 + PIR + limit switch pintu/jendela + sensor cuaca.
 
-  Jalur komunikasi (sama seperti versi ESP8266):
-  1. MQTT (HiveMQ Cloud): subscribe smarthome/<nama device>/status -> kontrol relay real-time dari app
+  Semua lewat MQTT (EMQX Cloud). TIDAK ADA lagi heartbeat HTTP ke Vercel (sama seperti versi ESP8266):
+  1. STATUS ONLINE/OFFLINE = MQTT Last Will (LWT) + pesan retained di smarthome/<device>/online.
+     Saat konek, ESP mendaftarkan wasiat "offline"; begitu terhubung ia publish "online".
+     Kalau ESP putus/mati, BROKER yang mempublish "offline" (terdeteksi ~1,5 x keepalive = ~45 dtk).
+  2. KONTROL: subscribe smarthome/<device>/status -> relay real-time dari app
      + jadwal AUTO (auto1 -> Relay 1, auto2 -> Relay 2, dicek di ESP pakai jam NTP WIB).
-  2. HTTPS (Vercel): POST /api/heartbeat tiap 15 detik berisi suhu, cuaca, status PIR, status pintu.
-     Perubahan relay oleh jadwal AUTO / PIR juga dilaporkan lewat sini supaya tampilan app sinkron.
-  3. Setup WiFi lewat portal (WiFiManager): tidak ada SSID/password di firmware.
+  3. TELEMETRY (suhu, cuaca, PIR, pintu) dipublish ke smarthome/<device>/telemetry (retained, JSON):
+     tiap 5 menit, sekali setelah konek, dan segera (maks tiap 2 dtk) kalau pintu/jendela berubah.
+  4. Perubahan relay oleh jadwal AUTO / PIR masih dilaporkan lewat HTTPS (POST RELAY_REPORT_URL) --
+     jarang terjadi, dan perlu untuk notifikasi push/Telegram + memperbarui snapshot retained di broker.
+  5. Setup WiFi lewat portal (WiFiManager): tidak ada SSID/password di firmware.
      Nama device otomatis dari MAC: "ESP-XXXXXX" (format sama dengan versi ESP8266, jadi generator
      kode aktivasi tidak berubah).
 
@@ -35,7 +40,7 @@
 #include <time.h>
 #include "esp_wifi.h"
 #include <esp_system.h>   // esp_reset_reason() untuk diagnostik
-#define MQTT_KEEPALIVE 60
+#define MQTT_KEEPALIVE 30 // detik; menentukan kecepatan broker menandai device OFFLINE (~1,5x nilai ini)
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <DHT.h>
@@ -48,15 +53,17 @@ const unsigned int  PORTAL_TIMEOUT_S = 180;
 // Set true SEKALI untuk menghapus WiFi tersimpan (memaksa portal muncul), lalu kembalikan ke false.
 const bool RESET_WIFI_ON_BOOT = false;
 
-const char* HEARTBEAT_URL = "https://backend-esp-8266.vercel.app/api/heartbeat";
+// Backend Vercel -- HANYA untuk lapor relay yang berubah (jadwal AUTO / PIR)
+const char* RELAY_REPORT_URL = "https://backend-esp-8266.vercel.app/api/heartbeat";
 
-// Broker EMQL Cloud (dipakai buat kontrol relay real-time)
+// Broker EMQX Cloud (kontrol relay, status online, telemetry)
 const char* MQTT_HOST = "zd23e698.ala.eu-central-1.emqxsl.com";
 const int   MQTT_PORT = 8883;
 const char* MQTT_USER = "SmartHomeIoT";
 const char* MQTT_PASS = "rayyanazka";
 
-const unsigned long HEARTBEAT_INTERVAL_MS = 15000; // backend anggap OFFLINE kalau > 35 detik tanpa heartbeat
+// Interval publish telemetry (tidak berpengaruh ke status online/offline -- itu urusan LWT)
+const unsigned long TELEMETRY_INTERVAL_MS = 300000UL; // 5 menit
 
 // ---------------- PIN ----------------
 const int NUM_RELAY = 5;
@@ -93,7 +100,9 @@ DHT dht[3] = { DHT(DHT_PINS[0], DHT22), DHT(DHT_PINS[1], DHT22), DHT(DHT_PINS[2]
 
 char deviceName[24]; // "ESP-XXXXXX" dari MAC
 char apName[32];     // "SmartHome-XXXXXX"
-char mqttTopic[64];
+char mqttTopic[64];       // subscribe: kontrol relay + jadwal
+char onlineTopic[64];     // LWT: "online" / "offline" (retained)
+char telemetryTopic[64];  // publish: suhu, cuaca, PIR, pintu (retained)
 
 // Jadwal auto: auto1 -> relay index 0, auto2 -> relay index 1
 const int NUM_AUTO = 2;
@@ -112,8 +121,9 @@ bool relayState[NUM_RELAY];         // status relay sebenarnya (true = nyala)
 bool pendingReport[NUM_RELAY];      // perlu dilaporkan ke backend
 unsigned long lastReportTry = 0;
 unsigned long lastAutoCheck = 0;
-unsigned long lastHeartbeat = 0;
-bool forceHeartbeat = false;
+unsigned long lastTelemetry = 0;
+bool telemetryDue = false;     // true = kirim telemetry secepatnya (mis. baru konek)
+bool forceTelemetry = false;   // pintu/jendela berubah -> kirim segera
 
 // PIR
 bool pirActive = false;
@@ -289,7 +299,7 @@ bool postRelayState(int idx) {
   client.setInsecure();
 
   HTTPClient http;
-  http.begin(client, HEARTBEAT_URL);
+  http.begin(client, RELAY_REPORT_URL);
   http.addHeader("Content-Type", "application/json");
   http.setTimeout(10000);
 
@@ -344,7 +354,7 @@ void handlePir() {
   }
 }
 
-// Limit switch pintu/jendela. Kalau berubah, heartbeat langsung dikirim (tidak menunggu 15 detik).
+// Limit switch pintu/jendela. Kalau berubah, telemetry langsung dipublish (tidak menunggu 5 menit).
 void handleDoor() {
   bool raw = (digitalRead(DOOR_PIN) == DOOR_OPEN_LEVEL);
   if (raw != doorRawLast) {
@@ -353,7 +363,7 @@ void handleDoor() {
   }
   if (raw != doorOpen && millis() - doorChangedAt >= 50) {
     doorOpen = raw;
-    forceHeartbeat = true;
+    forceTelemetry = true;
     Serial.println(doorOpen ? "Pintu/jendela: BUKA" : "Pintu/jendela: TUTUP");
   }
 }
@@ -384,28 +394,17 @@ String dhtText(int i) {
   return String(t, 1) + "C, " + String((int)(h + 0.5f)) + "%RH";
 }
 
-// ---------------------------------------------------------------- Heartbeat
-void sendHeartbeat() {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi tidak terhubung, skip heartbeat.");
-    return;
-  }
+// ---------------------------------------------------------------- Telemetry (via MQTT)
+// Publish suhu, cuaca, PIR, pintu sebagai JSON retained. Relay TIDAK ikut (itu urusan topic kontrol).
+void publishTelemetry() {
+  if (!mqttClient.connected()) return; // dicoba lagi begitu MQTT tersambung
 
-  // Baca sensor dulu, baru buka koneksi HTTPS (biar koneksi tidak menggantung selama pembacaan)
   String s1 = dhtText(0);
   String s2 = dhtText(1);
   String s3 = dhtText(2);
   int rainRaw, ldrRaw;
   const char* cuaca = readWeather(rainRaw, ldrRaw);
   Serial.printf("Cuaca: rain=%d ldr=%d -> %s\n", rainRaw, ldrRaw, cuaca); // pakai ini untuk kalibrasi ambang
-
-  WiFiClientSecure client;
-  client.setInsecure();
-
-  HTTPClient http;
-  http.begin(client, HEARTBEAT_URL);
-  http.addHeader("Content-Type", "application/json");
-  http.setTimeout(10000);
 
   StaticJsonDocument<384> doc;
   doc["device"] = deviceName;
@@ -415,22 +414,17 @@ void sendHeartbeat() {
   doc["cuaca"] = cuaca;
   doc["status_pir"] = pirActive ? "ON" : "OFF";
   doc["status_dor_win"] = doorOpen ? "ON" : "OFF";
-  // Status relay TIDAK ikut dikirim di sini (biar tidak menimpa perintah app yang baru masuk);
-  // relay dilaporkan terpisah saat jadwal AUTO / PIR mengubahnya (postRelayState).
 
-  String payload;
-  serializeJson(doc, payload);
+  char payload[384];
+  size_t len = serializeJson(doc, payload, sizeof(payload));
 
-  int httpCode = http.POST(payload);
-  if (httpCode > 0) {
-    Serial.printf("Heartbeat terkirim, kode: %d | %s\n", httpCode, payload.c_str());
+  if (mqttClient.publish(telemetryTopic, (const uint8_t*)payload, len, true)) {
+    telemetryDue = false;
+    forceTelemetry = false;
+    Serial.printf("Telemetry terkirim: %s\n", payload);
   } else {
-    Serial.printf("Heartbeat gagal: %s\n", http.errorToString(httpCode).c_str());
+    Serial.println("Telemetry gagal dipublish, coba lagi nanti.");
   }
-
-  http.end();
-  client.stop();
-  delay(100);
 }
 
 // ---------------------------------------------------------------- MQTT
@@ -481,8 +475,11 @@ void connectMqtt() {
     Serial.print("Menghubungkan ke EMQX Cloud...");
     String clientId = String("esp32-") + deviceName;
 
-    if (mqttClient.connect(clientId.c_str(), MQTT_USER, MQTT_PASS)) {
+    // LWT: kalau koneksi putus tanpa DISCONNECT, broker mempublish "offline" (retained) atas nama ESP.
+    if (mqttClient.connect(clientId.c_str(), MQTT_USER, MQTT_PASS, onlineTopic, 1, true, "offline")) {
       Serial.println("Terhubung");
+      mqttClient.publish(onlineTopic, "online", true); // retained -> status terbaru untuk subscriber mana pun
+      telemetryDue = true;                             // kirim telemetry segera setelah konek
       mqttClient.subscribe(mqttTopic);
       Serial.print("Subscribe ke: ");
       Serial.println(mqttTopic);
@@ -531,11 +528,13 @@ void setup() {
   snprintf(deviceName, sizeof(deviceName), "ESP-%02X%02X%02X", b3, b4, b5);
   snprintf(apName, sizeof(apName), "SmartHome-%02X%02X%02X", b3, b4, b5);
   snprintf(mqttTopic, sizeof(mqttTopic), "smarthome/%s/status", deviceName);
+  snprintf(onlineTopic, sizeof(onlineTopic), "smarthome/%s/online", deviceName);
+  snprintf(telemetryTopic, sizeof(telemetryTopic), "smarthome/%s/telemetry", deviceName);
   Serial.println();
   Serial.print("Device: ");
   Serial.println(deviceName);
 
-  // Status awal pintu (tanpa memicu heartbeat paksa)
+  // Status awal pintu (tanpa memicu telemetry paksa)
   doorRawLast = doorOpen = (digitalRead(DOOR_PIN) == DOOR_OPEN_LEVEL);
 
   if (RESET_WIFI_ON_BOOT) {
@@ -552,10 +551,10 @@ void setup() {
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setCallback(onMqttMessage);
   mqttClient.setBufferSize(768);
+  mqttClient.setKeepAlive(MQTT_KEEPALIVE);
 
   connectMqtt();
-  sendHeartbeat();
-  lastHeartbeat = millis();
+  lastTelemetry = millis();
 }
 
 void loop() {
@@ -577,12 +576,12 @@ void loop() {
   }
   reportPendingRelays();
 
-  bool due = millis() - lastHeartbeat >= HEARTBEAT_INTERVAL_MS;
-  bool forced = forceHeartbeat && millis() - lastHeartbeat >= 2000; // pintu berubah -> kirim segera (maks tiap 2 detik)
-  if (due || forced) {
-    forceHeartbeat = false;
-    lastHeartbeat = millis();
-    sendHeartbeat();
+  if (millis() - lastTelemetry >= TELEMETRY_INTERVAL_MS) telemetryDue = true;
+  bool forced = forceTelemetry && millis() - lastTelemetry >= 2000; // pintu berubah -> kirim segera (maks tiap 2 detik)
+  bool retryOk = millis() - lastTelemetry >= 5000; // kalau publish gagal, coba lagi paling cepat 5 dtk (hindari baca sensor terus-menerus)
+  if ((telemetryDue && retryOk) || forced) {
+    lastTelemetry = millis();
+    publishTelemetry();
     mqttClient.loop();
   }
 }

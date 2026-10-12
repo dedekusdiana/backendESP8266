@@ -1,36 +1,32 @@
 /*
-  ESP-01 (ESP8266) -- SUBSCRIBE ke HiveMQ Cloud (kontrol relay) + HEARTBEAT ke Vercel (status online)
+  ESP-01 (ESP8266) -- semua lewat MQTT (EMQX Cloud). TIDAK ADA lagi heartbeat HTTP ke Vercel.
 
-  Dua jalur berjalan bersamaan:
-  1. MQTT (HiveMQ Cloud) -- subscribe ke smarthome/<nama device>/status, buat kontrol
-     relay real-time (push instan begitu app Android update lewat backend).
-  2. HTTPS (Vercel API) -- kirim "heartbeat" POST /api/heartbeat tiap 15 detik, isinya
-     {"device":"ESP-A1B2C3","suhu":"..","suhu2":"..","suhu3":".."} -- suhu di sini DUMMY
-     (angka acak), karena ESP-01 sudah tidak punya pin sensor tersisa. Endpoint ini
-     TERPISAH dari /api/data (kontrol relay), supaya update relay dari app Android
-     tidak ikut dianggap sebagai heartbeat device.
-     Backend yang menghitung sendiri: kalau lebih dari 35 detik tanpa heartbeat,
-     otomatis dianggap OFFLINE (field "status_device" di response API).
-     App Android baca status ini lewat REST API biasa, SAMA seperti suhu & relay --
-     tidak perlu connect ke broker MQTT sama sekali.
+  1. STATUS ONLINE/OFFLINE = MQTT Last Will and Testament (LWT) + pesan retained
+     Topic: smarthome/<device>/online
+     - Saat konek, ESP mendaftarkan "wasiat" ke broker: kalau ESP putus/mati tanpa pamit,
+       BROKER sendiri yang mempublish "offline" (retained).
+     - Begitu berhasil konek, ESP mempublish "online" (retained).
+     - Deteksi putus kira-kira 1,5 x keepalive (keepalive 30 dtk -> sekitar 45 dtk).
+     Tidak ada request periodik ke Vercel sama sekali.
 
-  3. AUTO (jadwal lampu) -- jadwal nyala/mati (field auto1 & auto2 dari database) diterima
-     lewat MQTT (retained, jadi tetap sampai ke ESP walau baru nyala). Jamnya dicek DI ESP
-     sendiri pakai jam NTP (WIB), jadi jadwal tetap jalan walau internet/server sedang putus.
-     auto1 -> Relay 1 (GPIO0), auto2 -> Relay 2 (GPIO2). Setiap jadwal berganti nyala/mati,
-     ESP melapor ke backend (POST /api/heartbeat) supaya status di app ikut berubah.
+  2. KONTROL RELAY -- subscribe smarthome/<device>/status (retained), sama seperti sebelumnya.
 
-  4. SETUP WiFi (untuk produk yang dijual) -- SSID/password WiFi TIDAK ditanam di firmware.
-     Pertama kali menyala (atau kalau WiFi lama tidak ketemu > 2 menit), ESP membuat WiFi
-     sendiri bernama "SmartHome-<ChipID>". Pelanggan sambungkan HP ke WiFi itu, halaman setup
-     terbuka otomatis, pilih WiFi rumah + isi password -> tersimpan di flash & ESP restart koneksi.
-     Nama device otomatis dari Chip ID ESP ("ESP-<ChipID>"), jadi unik untuk setiap alat.
+  3. TELEMETRY (suhu, cuaca, PIR, pintu) -- dipublish lewat MQTT ke smarthome/<device>/telemetry
+     (retained, JSON) tiap TELEMETRY_INTERVAL_MS (5 menit) dan sekali tiap berhasil konek.
+     Suhu di sini DUMMY (angka acak), karena ESP-01 tidak punya pin sensor tersisa.
 
-  Library yang dibutuhkan (install lewat Library Manager di Arduino IDE):
-  - WiFiManager (by tzapu)
-  - PubSubClient (by Nick O'Leary)
-  - ArduinoJson (by Benoit Blanchon)
-  - ESP8266WiFi, WiFiClientSecure, ESP8266HTTPClient (bawaan board package ESP8266)
+  4. AUTO (jadwal lampu) -- jadwal diterima lewat MQTT (retained). Jamnya dicek di ESP sendiri
+     pakai jam NTP (WIB), jadi tetap jalan walau internet/server putus. Saat relay berganti
+     karena jadwal, ESP melapor ke backend lewat HTTPS (POST RELAY_REPORT_URL) -- jarang terjadi
+     (hanya saat jadwal berganti), dan perlu supaya notifikasi push/Telegram + snapshot retained
+     di broker ikut diperbarui.
+
+  5. SETUP WiFi -- SSID/password tidak ditanam. Pertama kali menyala (atau WiFi lama tidak ketemu
+     > 2 menit), ESP membuat WiFi "SmartHome-<ChipID>" dengan halaman setup otomatis.
+     Nama device otomatis dari Chip ID ("ESP-<ChipID>").
+
+  Library: WiFiManager (tzapu), PubSubClient (Nick O'Leary), ArduinoJson (Benoit Blanchon),
+  ESP8266WiFi, WiFiClientSecure, ESP8266HTTPClient (bawaan board package ESP8266)
 */
 
 #include <ESP8266WiFi.h>
@@ -38,7 +34,7 @@
 #include <WiFiClientSecure.h>
 #include <WiFiManager.h>   // by tzapu -- portal setup WiFi
 #include <time.h>
-#define MQTT_KEEPALIVE 60 // default 15 detik kurang toleran terhadap heartbeat HTTPS yang kadang lambat
+#define MQTT_KEEPALIVE 30 // detik; menentukan kecepatan broker menandai device OFFLINE (~1,5x nilai ini)
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
@@ -59,8 +55,8 @@ const bool RESET_WIFI_ON_BOOT = false;
 // LED status opsional (aktif LOW). -1 = tidak ada. JANGAN isi pin relay (0 / 2), nanti relay ikut berkedip.
 const int STATUS_LED = -1;
 
-// Backend Vercel (dipakai buat heartbeat status online)
-const char* HEARTBEAT_URL = "https://backend-esp-8266.vercel.app/api/heartbeat";
+// Backend Vercel -- HANYA untuk lapor relay yang berubah karena jadwal auto (jarang terjadi)
+const char* RELAY_REPORT_URL = "https://backend-esp-8266.vercel.app/api/heartbeat";
 
 // Broker EMQL Cloud (dipakai buat kontrol relay real-time)
 const char* MQTT_HOST = "zd23e698.ala.eu-central-1.emqxsl.com";
@@ -68,9 +64,8 @@ const int   MQTT_PORT = 8883;
 const char* MQTT_USER = "SmartHomeIoT";
 const char* MQTT_PASS = "rayyanazka";
 
-// Interval heartbeat (ms). Backend anggap OFFLINE kalau lebih dari 35 detik
-// tanpa heartbeat, jadi jangan naikkan ini terlalu tinggi (mis. di atas 30 detik).
-const unsigned long HEARTBEAT_INTERVAL_MS = 15000;
+// Interval publish telemetry ke MQTT (ms). Tidak berpengaruh ke status online/offline (itu urusan LWT).
+const unsigned long TELEMETRY_INTERVAL_MS = 300000UL; // 5 menit
 // ------------------------------------------------------------------
 
 // Nama device unik, dibuat otomatis dari Chip ID ESP di setup() -- mis. "ESP-A1B2C3".
@@ -100,23 +95,24 @@ unsigned long lastAutoCheck = 0;
 WiFiClientSecure secureMqttClient;
 PubSubClient mqttClient(secureMqttClient);
 
-char mqttTopic[64];
-unsigned long lastHeartbeat = 0;
+char mqttTopic[64];       // subscribe: kontrol relay + jadwal
+char onlineTopic[64];     // LWT: "online" / "offline" (retained)
+char telemetryTopic[64];  // publish: suhu, cuaca, PIR, pintu (retained)
+unsigned long lastTelemetry = 0;
+bool telemetryDue = false; // true = kirim telemetry secepatnya (mis. baru konek)
 
 // ---------------------------------------------------------------- Diagnostik, self-heal, simpan relay
 // Log tampil di Serial Monitor (115200). "blok terbesar" = potongan memori kosong terbesar yang
 // tersambung; ini angka yang menentukan apakah koneksi TLS baru bisa dibuat (bukan total heap bebas).
 const unsigned long DIAG_INTERVAL_MS = 30000UL;
-// Restart otomatis kalau heartbeat gagal terus (WiFi tersambung tapi HTTPS tidak bisa) atau memori
-// terlalu terpecah. Nilai MIN_FREE_BLOCK sebaiknya disesuaikan setelah membaca log [HB]/[DIAG].
-const int      MAX_HEARTBEAT_FAILS = 5;     // hanya dipakai untuk kondisi memori terfragmentasi
-const uint32_t MIN_FREE_BLOCK      = 5000;  // byte; di bawah ini heartbeat HTTPS dilewati & dihitung gagal
+// Laporan relay lewat HTTPS dilewati kalau memori terlalu terpecah untuk koneksi TLS baru
+// (nanti dicoba lagi). Sesuaikan nilainya setelah membaca log [DIAG].
+const uint32_t MIN_FREE_BLOCK = 5000;  // byte
 
 unsigned long lastDiagLog = 0;
 unsigned long wifiDisconnectCount = 0;
 int  lastDisconnectReason = 0;
 unsigned long lastRelaySwitchMs = 0;
-int  heartbeatFails = 0;
 bool firstEvalSilent = false;               // true = habis restart lunak, evaluasi jadwal pertama tidak mengubah relay
 WiFiEventHandler onDiscHandler, onGotIpHandler;
 
@@ -169,12 +165,12 @@ void diagSetup() {
 void diagLoop() {
   if (millis() - lastDiagLog < DIAG_INTERVAL_MS) return;
   lastDiagLog = millis();
-  Serial.printf_P(PSTR("[DIAG] uptime %lus | WiFi %s RSSI %d dBm | MQTT %s | heap %u | blok terbesar %u | WiFi putus %lu kali (alasan terakhir %d) | HB gagal berturut %d\n"),
+  Serial.printf_P(PSTR("[DIAG] uptime %lus | WiFi %s RSSI %d dBm | MQTT %s | heap %u | blok terbesar %u | WiFi putus %lu kali (alasan terakhir %d)\n"),
                   millis() / 1000,
                   WiFi.status() == WL_CONNECTED ? "OK" : "PUTUS", WiFi.RSSI(),
                   mqttClient.connected() ? "OK" : "PUTUS",
                   (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxFreeBlockSize(),
-                  wifiDisconnectCount, lastDisconnectReason, heartbeatFails);
+                  wifiDisconnectCount, lastDisconnectReason);
 }
 
 void statusLed(bool on) {
@@ -289,16 +285,17 @@ void checkAutoSchedules() {
   firstEvalSilent = false;
 }
 
-// Lapor status relay ke backend (POST /api/heartbeat, field status/status2). Return true kalau sukses.
+// Lapor status relay ke backend (POST RELAY_REPORT_URL, field status/status2). Return true kalau sukses.
 bool postRelayState(int idx) {
   if (WiFi.status() != WL_CONNECTED) return false;
+  if (ESP.getMaxFreeBlockSize() < MIN_FREE_BLOCK) return false; // memori terpecah, coba lagi nanti
 
   WiFiClientSecure client;
   client.setInsecure();
   client.setBufferSizes(512, 512);
 
   HTTPClient http;
-  http.begin(client, HEARTBEAT_URL); // laporan relay juga lewat /api/heartbeat (tanpa kode aktivasi)
+  http.begin(client, RELAY_REPORT_URL); // laporan relay (tanpa kode aktivasi)
   http.addHeader("Content-Type", "application/json");
   http.setTimeout(10000);
 
@@ -380,8 +377,7 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length) {
 }
 
 // Coba konek MQTT secara NON-BLOCKING.
-// Kalau HiveMQ sedang bermasalah, loop() tetap berjalan sehingga:
-// - heartbeat tetap bisa dikirim
+// Kalau broker sedang bermasalah, loop() tetap berjalan sehingga:
 // - AUTO tetap dicek
 // - relay tetap bisa diproses
 // - ESP tidak "hang" menunggu MQTT.
@@ -401,8 +397,11 @@ void tryConnectMqtt() {
   char clientId[40];
   snprintf(clientId, sizeof(clientId), "esp8266-%s", deviceName);
 
-  if (mqttClient.connect(clientId, MQTT_USER, MQTT_PASS)) {
+  // LWT: kalau koneksi putus tanpa DISCONNECT, broker mempublish "offline" (retained) atas nama ESP.
+  if (mqttClient.connect(clientId, MQTT_USER, MQTT_PASS, onlineTopic, 1, true, "offline")) {
     Serial.println(F("Terhubung"));
+    mqttClient.publish(onlineTopic, "online", true); // retained -> status terbaru untuk subscriber mana pun
+    telemetryDue = true;                             // kirim telemetry segera setelah konek
 
     if (mqttClient.subscribe(mqttTopic)) {
       Serial.print(F("Subscribe ke: "));
@@ -425,38 +424,12 @@ void tryConnectMqtt() {
   }
 }
 
-// Kirim heartbeat ke backend Vercel -- kasih tahu "saya masih hidup", SEKALIAN
-// kirim data suhu (dummy/simulasi, karena ESP-01 sudah tidak punya pin sensor lagi).
-// Field relay (status..status4) TIDAK ikut dikirim -- backend otomatis mempertahankan
-// nilai lama untuk itu, cuma suhu & last_heartbeat yang ter-refresh.
-void sendHeartbeat() {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println(F("WiFi tidak terhubung, skip heartbeat."));
-    return;
-  }
+// Publish telemetry (suhu dummy, cuaca dummy, PIR, pintu) ke MQTT sebagai JSON retained.
+// Field relay (status..status4) TIDAK ikut dikirim -- itu urusan topic kontrol relay.
+void publishTelemetry() {
+  if (!mqttClient.connected()) return; // dicoba lagi begitu MQTT tersambung (telemetryDue tetap true)
 
-  uint32_t heapBefore = ESP.getFreeHeap();
-  uint32_t blockBefore = ESP.getMaxFreeBlockSize();
-
-  // Memori terlalu terpecah untuk membuka koneksi TLS baru -> lewati, hitung gagal.
-  if (blockBefore < MIN_FREE_BLOCK) {
-    heartbeatFails++;
-    Serial.printf_P(PSTR("[HB] DILEWATI: blok terbesar %u < %u (heap %u) | gagal berturut %d\n"),
-                    (unsigned)blockBefore, (unsigned)MIN_FREE_BLOCK, (unsigned)heapBefore, heartbeatFails);
-    if (heartbeatFails >= MAX_HEARTBEAT_FAILS) restartWithLog("memori terpecah, heartbeat gagal terus");
-    return;
-  }
-
-  WiFiClientSecure client;
-  client.setInsecure();
-  client.setBufferSizes(512, 512); // hemat memori, penting untuk ESP8266
-
-  HTTPClient http;
-  http.begin(client, HEARTBEAT_URL);
-  http.addHeader("Content-Type", "application/json");
-  http.setTimeout(10000); // dilonggarkan -- MQTT sekarang toleran (keepalive 60s), jadi aman dikasih waktu lebih
-
-  // Suhu + kelembaban dummy, digabung jadi satu teks (bukan kolom terpisah). Pakai buffer tetap, bukan String.
+  // Suhu + kelembaban dummy, digabung jadi satu teks. Pakai buffer tetap, bukan String.
   char suhuText1[24], suhuText2[24], suhuText3[24];
   int t1 = random(250, 350), t2 = random(250, 350), t3 = random(250, 350); // per 0,1 derajat
   snprintf(suhuText1, sizeof(suhuText1), "%d.%dC, %d%%RH", t1 / 10, t1 % 10, (int)random(40, 90));
@@ -467,13 +440,12 @@ void sendHeartbeat() {
   const char* cuacaOptions[] = { "Cerah", "Hujan", "Mendung" };
   const char* cuaca = cuacaOptions[random(0, 3)];
 
-  // Sensor PIR (gerak) & pintu/jendela -- DUMMY ACAK dulu (belum pasang sensor fisik).
-  // Kalau nanti sudah pasang sensor asli, ganti dua baris ini dengan pembacaan pin GPIO
-  // (mis. digitalRead(PIR_PIN) == HIGH -> "ON"), tidak perlu ubah apa pun di backend/app.
-  const char* pirDummy    = random(0, 10) < 2 ? "ON" : "OFF"; // ~20% peluang "ada gerak"
-  const char* doorWinDummy = random(0, 10) < 3 ? "ON" : "OFF"; // ~30% peluang "terbuka"
+  // Sensor PIR & pintu/jendela -- DUMMY ACAK dulu (belum ada sensor fisik).
+  // Nanti ganti dengan digitalRead(pin) tanpa perlu ubah topic/format.
+  const char* pirDummy     = random(0, 10) < 2 ? "ON" : "OFF";
+  const char* doorWinDummy = random(0, 10) < 3 ? "ON" : "OFF";
 
-  StaticJsonDocument<320> doc; // dinaikkan sedikit karena field bertambah (status_pir, status_dor_win)
+  StaticJsonDocument<320> doc;
   doc["device"] = deviceName;
   doc["suhu"] = suhuText1;
   doc["suhu2"] = suhuText2;
@@ -485,30 +457,13 @@ void sendHeartbeat() {
   char payload[300];
   size_t payloadLen = serializeJson(doc, payload, sizeof(payload));
 
-  int httpCode = http.POST((uint8_t*)payload, payloadLen);
-  if (httpCode > 0) {
-    heartbeatFails = 0;
-    Serial.print(F("Heartbeat terkirim, kode: "));
-    Serial.print(httpCode);
-    Serial.print(F(" | "));
+  if (mqttClient.publish(telemetryTopic, (const uint8_t*)payload, payloadLen, true)) {
+    telemetryDue = false;
+    Serial.print(F("Telemetry terkirim: "));
     Serial.println(payload);
   } else {
-    heartbeatFails++;
-    Serial.printf_P(PSTR("Heartbeat gagal: %s | gagal berturut %d\n"), http.errorToString(httpCode).c_str(), heartbeatFails);
+    Serial.println(F("Telemetry gagal dipublish, coba lagi nanti."));
   }
-
-  http.end();
-  client.stop();
-  delay(200); // kasih waktu stack WiFi/TLS "napas" sebelum lanjut proses MQTT
-
-  // Sebelum vs sesudah: kalau angka "sesudah" terus lebih kecil dari "sebelum" dari siklus ke siklus, ada kebocoran.
-  Serial.printf_P(PSTR("[HB] heap %u -> %u | blok terbesar %u -> %u\n"),
-                  (unsigned)heapBefore, (unsigned)ESP.getFreeHeap(), (unsigned)blockBefore, (unsigned)ESP.getMaxFreeBlockSize());
-
-  // Timeout/error HTTP sementara TIDAK me-restart ESP.
-  // WiFi/MQTT boleh pulih sendiri tanpa mematikan relay.
-  // Restart hanya dilakukan pada kondisi memori terfragmentasi
-  // (lihat pemeriksaan blockBefore < MIN_FREE_BLOCK di atas).
 }
 
 void setup() {
@@ -537,6 +492,8 @@ void setup() {
   snprintf(deviceName, sizeof(deviceName), "ESP-%06lX", (unsigned long)ESP.getChipId());
   snprintf(apName, sizeof(apName), "SmartHome-%06lX", (unsigned long)ESP.getChipId());
   snprintf(mqttTopic, sizeof(mqttTopic), "smarthome/%s/status", deviceName);
+  snprintf(onlineTopic, sizeof(onlineTopic), "smarthome/%s/online", deviceName);
+  snprintf(telemetryTopic, sizeof(telemetryTopic), "smarthome/%s/telemetry", deviceName);
   Serial.println();
   Serial.print(F("Device: "));
   Serial.println(deviceName);
@@ -557,10 +514,10 @@ void setup() {
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setCallback(onMqttMessage);
   mqttClient.setBufferSize(768); // payload MQTT: status relay + jadwal auto
+  mqttClient.setKeepAlive(MQTT_KEEPALIVE);
 
   tryConnectMqtt();
-  sendHeartbeat();
-  lastHeartbeat = millis();
+  lastTelemetry = millis();
 }
 
 void loop() {
@@ -580,9 +537,9 @@ void loop() {
   }
   reportPendingRelays();
 
-  if (millis() - lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
-    lastHeartbeat = millis();
-    sendHeartbeat();
-    if (mqttClient.connected()) mqttClient.loop(); // proses MQTT lagi setelah heartbeat
+  if (millis() - lastTelemetry >= TELEMETRY_INTERVAL_MS) {
+    lastTelemetry = millis();
+    telemetryDue = true;
   }
+  if (telemetryDue) publishTelemetry();
 }

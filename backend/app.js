@@ -312,13 +312,16 @@ app.post('/api/mqtt-event', async (req, res) => {
     if (!secretMatches(req.get('X-Webhook-Secret'), secret)) return res.sendStatus(403);
 
     const { topic, payload } = req.body || {};
+    // Log ringkas isi event (dipakai untuk diagnosa; volume kecil karena hanya online/offline + telemetry 5 menit)
+    console.log('mqtt-event', JSON.stringify({ topic, payload }).slice(0, 400));
     const m = /^smarthome\/([A-Za-z0-9_-]{1,50})\/(online|telemetry)$/.exec(String(topic || ''));
-    if (!m) return res.status(400).json({ error: 'Topic tidak dikenali' });
+    if (!m) { console.error('mqtt-event 400: topic tidak dikenali', JSON.stringify(req.body).slice(0, 400)); return res.status(400).json({ error: 'Topic tidak dikenali' }); }
     const [, device, kind] = m;
 
     if (kind === 'online') {
       const text = String(payload).trim().toLowerCase();
       if (text !== 'online' && text !== 'offline') {
+        console.error('mqtt-event 400: payload bukan online/offline', JSON.stringify({ topic, payload }).slice(0, 400));
         return res.status(400).json({ error: 'Payload harus "online" atau "offline"' });
       }
       const isOnline = text === 'online';
